@@ -1,0 +1,51 @@
+name: roundds
+description: "Roundds — единый плеер музыки из разных источников (YouTube Music, SoundCloud, Яндекс Музыка)."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State
+  flutter_riverpod: ^2.5.1
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # Audio playback (in-app player + background + notification)
+  just_audio: ^0.9.40
+  just_audio_background: ^0.0.1-beta.13
+
+  # Dynamic accent from artwork
+  palette_generator: ^0.3.3+3
+
+  # Geometric font
+  google_fonts: ^6.2.1
+
+  # Networking / parsing
+  dio: ^5.5.0+1
+  crypto: ^3.0.3
+
+  # Images
+  cached_network_image: ^3.3.1
+
+  # Sources
+  youtube_explode_dart: ^2.2.1
+
+  # Storage
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.2.3
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
