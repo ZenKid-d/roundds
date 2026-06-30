@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
+import 'appearance_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -18,7 +19,18 @@ class SettingsScreen extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         const _RiskBanner(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Внешний вид'),
+          subtitle: Text('Тема, акцент, плеер, формы, шрифт',
+              style: TextStyle(color: AppColors.white45, fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AppearanceScreen())),
+        ),
+        const SizedBox(height: 8),
         const _Header('Источники'),
         for (final s in SourceType.values)
           SwitchListTile(

@@ -9,6 +9,7 @@ import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
 import '../data/lyrics_service.dart';
+import 'theme/theme_settings.dart';
 import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
 import 'downloads_controller.dart';
@@ -84,6 +85,9 @@ final lyricsServiceProvider =
 
 final sleepTimerProvider = ChangeNotifierProvider<SleepTimerController>(
     (ref) => SleepTimerController());
+
+final themeSettingsProvider = ChangeNotifierProvider<ThemeSettingsController>(
+    (ref) => ThemeSettingsController(ref.read(prefsProvider)));
 
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(

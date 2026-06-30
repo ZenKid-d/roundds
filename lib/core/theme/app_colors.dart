@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 
-/// Палитра «тёмный премиум» на чистом AMOLED-чёрном.
+/// Палитра «тёмный премиум». Фон/поверхности изменяемы — их задаёт
+/// выбранный фон-пресет (см. ThemeSettingsController.applyBackground).
 class AppColors {
-  static const background = Color(0xFF000000);
-  static const surface1 = Color(0xFF0C0C0C);
-  static const surface2 = Color(0xFF141414);
+  static Color background = const Color(0xFF000000);
+  static Color surface1 = const Color(0xFF0C0C0C);
+  static Color surface2 = const Color(0xFF141414);
+
+  static void applyBackground(Color bg, Color s1, Color s2) {
+    background = bg;
+    surface1 = s1;
+    surface2 = s2;
+  }
+
   static final white06 = Colors.white.withValues(alpha: 0.06);
   static final white45 = Colors.white.withValues(alpha: 0.45);
   static final white60 = Colors.white.withValues(alpha: 0.60);

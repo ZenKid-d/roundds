@@ -5,12 +5,26 @@ import 'package:palette_generator/palette_generator.dart';
 
 import '../providers.dart';
 import 'app_colors.dart';
+import 'theme_settings.dart';
 
 /// URL обложки текущего трека. Меняет значение ТОЛЬКО при смене трека
 /// (Riverpod пропускает одинаковые значения), поэтому акцент не пересчитывается
 /// на каждый тик позиции.
 final currentArtworkProvider = Provider<String?>((ref) {
   return ref.watch(playbackProvider).current?.artworkUrl;
+});
+
+/// Итоговый акцент с учётом режима: динамический из обложки / пресет / свой.
+final effectiveAccentProvider = Provider<Color>((ref) {
+  final ts = ref.watch(themeSettingsProvider);
+  switch (ts.accentMode) {
+    case AccentMode.dynamic:
+      return ref.watch(accentProvider).valueOrNull ?? AppColors.defaultAccent;
+    case AccentMode.preset:
+      return ts.presetColor;
+    case AccentMode.custom:
+      return Color(ts.customColor);
+  }
 });
 
 /// Динамический акцент: доминирующий/яркий цвет обложки.

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/theme_settings.dart';
+import '../../core/widgets/artwork.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/vinyl_disc.dart';
@@ -20,6 +22,7 @@ class NowPlayingScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pc = ref.watch(playbackProvider);
     final accent = Theme.of(context).colorScheme.primary;
+    final ts = ref.watch(themeSettingsProvider);
     final track = pc.current;
 
     if (track == null) {
@@ -48,13 +51,15 @@ class NowPlayingScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Expanded(
                   child: Center(
-                    child: VinylDisc(
-                      artworkUrl: track.artworkUrl,
-                      isPlaying: pc.isPlaying,
-                      accent: accent,
-                      seed: track.uid,
-                      size: 250,
-                    ),
+                    child: ts.playerView == PlayerView.cover
+                        ? _coverArt(track, accent)
+                        : VinylDisc(
+                            artworkUrl: track.artworkUrl,
+                            isPlaying: pc.isPlaying && ts.spin,
+                            accent: accent,
+                            seed: track.uid,
+                            size: 250,
+                          ),
                   ),
                 ),
                 Text(track.title,
@@ -88,6 +93,23 @@ class NowPlayingScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _coverArt(Track track, Color accent) {
+    return Container(
+      width: 280,
+      height: 280,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+              color: accent.withValues(alpha: 0.35),
+              blurRadius: 50,
+              spreadRadius: 2),
+        ],
+      ),
+      child: Artwork(track.artworkUrl, size: 280, radius: 24, seed: track.uid),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theme/app_colors.dart';
+import '../theme/theme_settings.dart';
 import 'artwork.dart';
 
 /// Закреплённый мини-плеер. Показывается, когда есть текущий трек.
@@ -16,6 +17,7 @@ class MiniPlayer extends ConsumerWidget {
     final track = pc.current;
     if (track == null) return const SizedBox.shrink();
     final accent = Theme.of(context).colorScheme.primary;
+    final showEq = ref.watch(themeSettingsProvider).animLevel != AnimLevel.min;
 
     return GestureDetector(
       onTap: () => context.push('/player'),
@@ -50,7 +52,7 @@ class MiniPlayer extends ConsumerWidget {
                 ],
               ),
             ),
-            if (pc.isPlaying) _Equalizer(color: accent),
+            if (pc.isPlaying && showEq) _Equalizer(color: accent),
             const SizedBox(width: 8),
             _RoundIcon(
               icon: pc.isLoading

@@ -2,20 +2,26 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/theme_settings.dart';
 
 /// Обложка с плейсхолдером и скруглением. Если URL нет — рисуем градиент-заглушку.
 class Artwork extends StatelessWidget {
-  const Artwork(this.url, {super.key, this.size, this.radius = 18, this.seed});
+  const Artwork(this.url, {super.key, this.size, this.radius, this.seed});
 
   final String? url;
   final double? size;
-  final double radius;
+
+  /// Если не задан — берём радиус из настроек (AppShapes).
+  final double? radius;
 
   /// Для стабильного цвета заглушки (например, uid трека).
   final String? seed;
 
   @override
   Widget build(BuildContext context) {
+    final r = radius ??
+        Theme.of(context).extension<AppShapes>()?.radius ??
+        16;
     final placeholder = _placeholder();
     final child = (url == null || url!.isEmpty)
         ? placeholder
@@ -28,7 +34,7 @@ class Artwork extends StatelessWidget {
             errorWidget: (_, __, ___) => placeholder,
           );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: BorderRadius.circular(r),
       child: SizedBox(width: size, height: size, child: child),
     );
   }
