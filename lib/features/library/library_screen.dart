@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
@@ -96,11 +97,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             ),
             ListTile(
-                leading: const Icon(Icons.ondemand_video),
+                leading: const FaIcon(FontAwesomeIcons.youtube,
+                    color: Color(0xFFFF0000), size: 20),
                 title: const Text('Из YouTube (ссылка)'),
                 onTap: () => Navigator.pop(context, 'youtube')),
             ListTile(
-                leading: const Icon(Icons.library_music),
+                leading: const FaIcon(FontAwesomeIcons.yandex,
+                    color: Color(0xFFFFCC00), size: 20),
                 title: const Text('Из Яндекса (мои плейлисты)'),
                 onTap: () => Navigator.pop(context, 'yandex')),
           ],

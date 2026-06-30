@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../domain/models/source_type.dart';
 
@@ -27,21 +28,12 @@ class ServiceBadge extends StatelessWidget {
   }
 
   Widget _glyph() {
-    switch (source) {
-      case SourceType.youtube:
-        return Icon(Icons.ondemand_video,
-            size: size * 0.6, color: source.onColor);
-      case SourceType.soundcloud:
-        return Icon(Icons.cloud, size: size * 0.6, color: source.onColor);
-      case SourceType.yandex:
-        return Text('Я',
-            style: TextStyle(
-              fontSize: size * 0.6,
-              height: 1,
-              fontWeight: FontWeight.w600,
-              color: source.onColor,
-            ));
-    }
+    final icon = switch (source) {
+      SourceType.youtube => FontAwesomeIcons.youtube,
+      SourceType.soundcloud => FontAwesomeIcons.soundcloud,
+      SourceType.yandex => FontAwesomeIcons.yandex,
+    };
+    return FaIcon(icon, size: size * 0.55, color: source.onColor);
   }
 }
 
