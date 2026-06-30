@@ -51,18 +51,17 @@ class YoutubeMusicSource implements MusicSource {
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     try {
-      StreamManifest manifest;
-      try {
-        // Один android-клиент (с watch-страницей — иначе ссылка не играбельна
-        // из-за n-параметра/троттлинга). Быстрее, чем перебор нескольких клиентов.
-        manifest = await _yt.videos.streamsClient.getManifest(
-          track.id,
-          ytClients: [YoutubeApiClient.android],
-        );
-      } catch (_) {
-        // Надёжный откат на стандартные клиенты.
-        manifest = await _yt.videos.streamsClient.getManifest(track.id);
-      }
+      // Набор клиентов, дающий играбельные ссылки: один из них почти всегда
+      // отдаёт поток без троттлинга. Меньше клиентов = быстрее, но рвётся
+      // воспроизведение (403/Source error), поэтому берём проверенную тройку.
+      final manifest = await _yt.videos.streamsClient.getManifest(
+        track.id,
+        ytClients: [
+          YoutubeApiClient.androidVr,
+          YoutubeApiClient.android,
+          YoutubeApiClient.ios,
+        ],
+      );
       final audio = manifest.audioOnly.isNotEmpty
           ? manifest.audioOnly.withHighestBitrate()
           : manifest.muxed.withHighestBitrate();
