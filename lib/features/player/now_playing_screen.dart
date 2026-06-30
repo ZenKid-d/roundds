@@ -8,6 +8,8 @@ import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/vinyl_disc.dart';
 import '../../domain/models/track.dart';
+import '../../playback/audio_handler.dart';
+import 'lyrics_screen.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
   const NowPlayingScreen({super.key});
@@ -142,8 +144,9 @@ class NowPlayingScreen extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-              icon: Icon(Icons.shuffle, color: AppColors.white45),
-              onPressed: () {}),
+              icon: Icon(Icons.shuffle,
+                  color: pc.isShuffle ? accent : AppColors.white45),
+              onPressed: pc.toggleShuffle),
           const SizedBox(width: 10),
           IconButton(
               iconSize: 38,
@@ -172,29 +175,63 @@ class NowPlayingScreen extends ConsumerWidget {
               onPressed: pc.next),
           const SizedBox(width: 10),
           IconButton(
-              icon: Icon(Icons.repeat, color: AppColors.white45),
-              onPressed: () {}),
+              icon: Icon(
+                  pc.repeatMode == LoopMode.one
+                      ? Icons.repeat_one
+                      : Icons.repeat,
+                  color: pc.repeatMode == LoopMode.off
+                      ? AppColors.white45
+                      : accent),
+              onPressed: pc.cycleRepeat),
         ],
       ),
     );
   }
 
   Widget _tools(BuildContext context, WidgetRef ref, Track track) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final liked = ref.watch(libraryProvider).isLiked(track);
+    final downloads = ref.watch(downloadsProvider);
+    final downloaded = downloads.isDownloaded(track.uid);
+    final downloading = downloads.isDownloading(track.uid);
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         IconButton(
             icon: Icon(Icons.lyrics_outlined, color: AppColors.white60),
-            onPressed: () => _todo(context, 'Текст песен — в планах')),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => LyricsScreen(track: track),
+                ))),
         IconButton(
             icon: Icon(Icons.queue_music, color: AppColors.white60),
             onPressed: () => _showQueue(context, ref)),
         IconButton(
+            icon: downloading
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: accent))
+                : Icon(
+                    downloaded
+                        ? Icons.download_done
+                        : Icons.download_outlined,
+                    color: downloaded ? accent : AppColors.white60),
+            onPressed: () {
+              if (downloaded) {
+                ref.read(downloadsProvider).remove(track.uid);
+              } else if (!downloading) {
+                ref.read(downloadsProvider).download(track);
+              }
+            }),
+        IconButton(
             icon: Icon(Icons.add_circle_outline, color: AppColors.white60),
             onPressed: () => _addToPlaylist(context, ref, track)),
         IconButton(
-            icon: Icon(Icons.favorite_border, color: AppColors.white60),
-            onPressed: () => _todo(context, 'Избранное — в планах')),
+            icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
+                color: liked ? accent : AppColors.white60),
+            onPressed: () => ref.read(libraryProvider).toggleLike(track)),
       ],
     );
   }

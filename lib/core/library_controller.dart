@@ -17,9 +17,11 @@ class LibraryController extends ChangeNotifier {
 
   final List<Track> _history = [];
   final List<PlaylistX> _playlists = [];
+  final List<Track> _liked = [];
 
   List<Track> get history => List.unmodifiable(_history);
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
+  List<Track> get liked => List.unmodifiable(_liked);
 
   void _load() {
     final h = _prefs.getString('history');
@@ -36,6 +38,26 @@ class LibraryController extends ChangeNotifier {
         ..addAll((jsonDecode(p) as List)
             .map((e) => PlaylistX.fromJson((e as Map).cast<String, dynamic>())));
     }
+    final l = _prefs.getString('liked');
+    if (l != null) {
+      _liked
+        ..clear()
+        ..addAll((jsonDecode(l) as List)
+            .map((e) => Track.fromJson((e as Map).cast<String, dynamic>())));
+    }
+    notifyListeners();
+  }
+
+  bool isLiked(Track t) => _liked.any((e) => e.uid == t.uid);
+
+  Future<void> toggleLike(Track t) async {
+    if (isLiked(t)) {
+      _liked.removeWhere((e) => e.uid == t.uid);
+    } else {
+      _liked.insert(0, t);
+    }
+    await _prefs.setString(
+        'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));
     notifyListeners();
   }
 

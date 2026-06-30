@@ -8,8 +8,10 @@ import '../data/sources/soundcloud_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../data/lyrics_service.dart';
 import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
+import 'downloads_controller.dart';
 import 'library_controller.dart';
 import 'settings_controller.dart';
 
@@ -75,6 +77,13 @@ final playbackProvider = ChangeNotifierProvider<PlaybackController>(
 
 final libraryProvider = ChangeNotifierProvider<LibraryController>(
     (ref) => LibraryController(ref.read(prefsProvider)));
+
+final lyricsServiceProvider =
+    Provider<LyricsService>((ref) => LyricsService(ref.read(dioProvider)));
+
+/// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
+final downloadsProvider = ChangeNotifierProvider<DownloadsController>(
+    (ref) => throw UnimplementedError('downloads override missing'));
 
 /// Готовность каждого источника (для статусов в Drawer/Settings).
 final sourceReadyProvider =

@@ -38,6 +38,11 @@ class PlaybackController extends ChangeNotifier {
   String? get error => _handler.error;
   Duration get position => _position;
   Duration get duration => _duration;
+  bool get isShuffle => _handler.isShuffle;
+  LoopMode get repeatMode => _handler.repeatMode;
+
+  void toggleShuffle() => _handler.toggleShuffle();
+  void cycleRepeat() => _handler.cycleRepeat();
 
   Future<void> playTrack(Track track, {List<Track>? queue}) =>
       _handler.playTrack(track, queue: queue);

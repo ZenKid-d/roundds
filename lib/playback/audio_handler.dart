@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -5,27 +7,33 @@ import '../data/aggregator.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 
+enum LoopMode { off, all, one }
+
 /// Аудио-хендлер поверх audio_service: владеет плеером и очередью, отдаёт
 /// состояние в системное уведомление / на локскрин и принимает оттуда команды.
 class RoundsAudioHandler extends BaseAudioHandler {
   RoundsAudioHandler(this._aggregator) {
-    // Транслируем состояние плеера в audio_service (уведомление, локскрин).
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
     _player.playerStateStream.listen((s) {
-      if (s.processingState == ProcessingState.completed) skipToNext();
+      if (s.processingState == ProcessingState.completed) _onComplete();
     });
   }
 
   final Aggregator _aggregator;
   final AudioPlayer _player = AudioPlayer();
+  final Random _rng = Random();
+
+  /// Возвращает локальный путь к скачанному треку (если есть) — для оффлайна.
+  /// Устанавливается из main().
+  String? Function(String uid)? localFileResolver;
 
   final List<Track> _queue = [];
   int _index = -1;
   bool _loading = false;
   String? _error;
+  bool _shuffle = false;
+  LoopMode _repeat = LoopMode.off;
 
-  /// Колбэк для UI-обёртки (PlaybackController) — дёргается при смене трека,
-  /// загрузке и ошибке.
   void Function()? onUiChanged;
   void _notify() => onUiChanged?.call();
 
@@ -35,6 +43,18 @@ class RoundsAudioHandler extends BaseAudioHandler {
       (_index >= 0 && _index < _queue.length) ? _queue[_index] : null;
   bool get isLoading => _loading;
   String? get error => _error;
+  bool get isShuffle => _shuffle;
+  LoopMode get repeatMode => _repeat;
+
+  void toggleShuffle() {
+    _shuffle = !_shuffle;
+    _notify();
+  }
+
+  void cycleRepeat() {
+    _repeat = LoopMode.values[(_repeat.index + 1) % LoopMode.values.length];
+    _notify();
+  }
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
     if (queue != null) {
@@ -66,11 +86,16 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
     mediaItem.add(_toMediaItem(track));
     try {
-      final stream = await _aggregator.resolveStreamWithFallback(track);
-      await _player.setAudioSource(
-        AudioSource.uri(stream.uri, headers: stream.headers),
-      );
-      // play() завершается лишь по окончании/паузе — не ждём.
+      final local = localFileResolver?.call(track.uid);
+      if (local != null) {
+        // Оффлайн — играем скачанный файл.
+        await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
+      } else {
+        final stream = await _aggregator.resolveStreamWithFallback(track);
+        await _player.setAudioSource(
+          AudioSource.uri(stream.uri, headers: stream.headers),
+        );
+      }
       _player.play();
     } catch (e) {
       _error = e.toString();
@@ -102,6 +127,34 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
+  // --- навигация по очереди ---
+
+  Future<void> _onComplete() => _advance(auto: true);
+
+  Future<void> _advance({required bool auto}) async {
+    if (_queue.isEmpty) return;
+    if (auto && _repeat == LoopMode.one) {
+      await _load();
+      return;
+    }
+    int next;
+    if (_shuffle && _queue.length > 1) {
+      next = _rng.nextInt(_queue.length - 1);
+      if (next >= _index) next += 1;
+    } else {
+      next = _index + 1;
+    }
+    if (next >= _queue.length) {
+      if (_repeat == LoopMode.all) {
+        next = 0;
+      } else {
+        return; // конец очереди
+      }
+    }
+    _index = next;
+    await _load();
+  }
+
   // --- команды из системного UI / приложения ---
 
   @override
@@ -114,12 +167,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() async {
-    if (_index + 1 < _queue.length) {
-      _index++;
-      await _load();
-    }
-  }
+  Future<void> skipToNext() => _advance(auto: false);
 
   @override
   Future<void> skipToPrevious() async {

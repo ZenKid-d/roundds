@@ -16,7 +16,8 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  bool _showQueue = false;
+  int _tab = 0; // 0 плейлисты, 1 любимое, 2 загрузки, 3 очередь
+  static const _titles = ['Плейлисты', 'Любимое', 'Загрузки', 'Очередь'];
 
   @override
   Widget build(BuildContext context) {
@@ -26,34 +27,95 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Row(
             children: [
-              _Toggle(
-                  label: 'Плейлисты',
-                  active: !_showQueue,
-                  onTap: () => setState(() => _showQueue = false)),
-              const SizedBox(width: 8),
-              _Toggle(
-                  label: 'Очередь',
-                  active: _showQueue,
-                  onTap: () => setState(() => _showQueue = true)),
-              const Spacer(),
-              if (!_showQueue)
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: _createPlaylist,
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < _titles.length; i++) ...[
+                        _Toggle(
+                            label: _titles[i],
+                            active: _tab == i,
+                            onTap: () => setState(() => _tab = i)),
+                        const SizedBox(width: 8),
+                      ],
+                    ],
+                  ),
                 ),
+              ),
+              if (_tab == 0)
+                IconButton(
+                    icon: const Icon(Icons.add), onPressed: _createPlaylist),
             ],
           ),
         ),
-        Expanded(child: _showQueue ? const _QueueView() : _PlaylistsView()),
+        Expanded(child: _bodyFor(_tab)),
       ],
     );
   }
+
+  Widget _bodyFor(int t) => switch (t) {
+        0 => _PlaylistsView(),
+        1 => const _LikedView(),
+        2 => const _DownloadsView(),
+        _ => const _QueueView(),
+      };
 
   Future<void> _createPlaylist() async {
     final name = await _askName(context, 'Новый плейлист');
     if (name != null && name.isNotEmpty) {
       await ref.read(libraryProvider).createPlaylist(name);
     }
+  }
+}
+
+class _LikedView extends ConsumerWidget {
+  const _LikedView();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final liked = ref.watch(libraryProvider).liked;
+    if (liked.isEmpty) {
+      return Center(
+        child: Text('Нет лайкнутых треков',
+            style: TextStyle(color: AppColors.white45)),
+      );
+    }
+    return ListView.builder(
+      itemCount: liked.length,
+      itemBuilder: (_, i) => TrackRow(
+        track: liked[i],
+        onTap: () => playTrack(ref, context, liked[i], queue: liked),
+        trailing: IconButton(
+          icon: const Icon(Icons.favorite, color: Color(0xFFE24B4A)),
+          onPressed: () => ref.read(libraryProvider).toggleLike(liked[i]),
+        ),
+      ),
+    );
+  }
+}
+
+class _DownloadsView extends ConsumerWidget {
+  const _DownloadsView();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dl = ref.watch(downloadsProvider).downloads;
+    if (dl.isEmpty) {
+      return Center(
+        child: Text('Нет скачанных треков',
+            style: TextStyle(color: AppColors.white45)),
+      );
+    }
+    return ListView.builder(
+      itemCount: dl.length,
+      itemBuilder: (_, i) => TrackRow(
+        track: dl[i],
+        onTap: () => playTrack(ref, context, dl[i], queue: dl),
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline, color: AppColors.white60),
+          onPressed: () => ref.read(downloadsProvider).remove(dl[i].uid),
+        ),
+      ),
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/downloads_controller.dart';
 import 'core/providers.dart';
 import 'data/aggregator.dart';
 import 'data/sources/soundcloud_source.dart';
@@ -30,6 +31,8 @@ Future<void> main() async {
     SourceType.yandex: yandex,
   });
 
+  final downloads = DownloadsController(prefs, dio, aggregator);
+
   // Фоновое воспроизведение + уведомление + управление с локскрина.
   final handler = await AudioService.init(
     builder: () => RoundsAudioHandler(aggregator),
@@ -39,6 +42,8 @@ Future<void> main() async {
       androidNotificationOngoing: true,
     ),
   );
+  // Оффлайн: плеер сначала ищет скачанный файл.
+  handler.localFileResolver = downloads.localPathFor;
 
   runApp(
     ProviderScope(
@@ -50,6 +55,7 @@ Future<void> main() async {
         yandexSourceProvider.overrideWithValue(yandex),
         aggregatorProvider.overrideWithValue(aggregator),
         audioHandlerProvider.overrideWithValue(handler),
+        downloadsProvider.overrideWith((ref) => downloads),
       ],
       child: const RoundedsApp(),
     ),

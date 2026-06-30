@@ -39,6 +39,7 @@ dependencies:
   # Storage
   flutter_secure_storage: ^9.2.2
   shared_preferences: ^2.2.3
+  path_provider: ^2.1.4
 
   cupertino_icons: ^1.0.8
 
