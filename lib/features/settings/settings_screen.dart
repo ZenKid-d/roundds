@@ -5,6 +5,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
+import '../stats/stats_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -37,6 +38,15 @@ class SettingsScreen extends ConsumerWidget {
         _SoundcloudToken(settings.hasSoundcloudToken),
         const SizedBox(height: 10),
         const _SoundcloudClientId(),
+        const SizedBox(height: 16),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.bar_chart),
+          title: const Text('Статистика прослушиваний'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StatsScreen())),
+        ),
         const SizedBox(height: 24),
         const _About(),
       ],

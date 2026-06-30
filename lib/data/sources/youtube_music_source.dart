@@ -74,6 +74,18 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
+  /// Импорт плейлиста по ссылке/ID. Берём все треки как есть (без муз-фильтра —
+  /// плейлист пользователь курировал сам).
+  Future<({String title, List<Track> tracks})> importPlaylist(String urlOrId,
+      {int limit = 300}) async {
+    final m = RegExp(r'list=([A-Za-z0-9_-]+)').firstMatch(urlOrId);
+    final id = m?.group(1) ?? urlOrId.trim();
+    final pid = PlaylistId(id);
+    final pl = await _yt.playlists.get(pid);
+    final videos = await _yt.playlists.getVideos(pid).take(limit).toList();
+    return (title: pl.title, tracks: videos.map(_videoToTrack).toList());
+  }
+
   /// Оставляем только похожее на музыкальный трек: не прямой эфир и длительность
   /// в окне песни. Это убирает обычные видео, эфиры, миксы и подкасты.
   Iterable<Track> _onlyMusic(Iterable<Video> videos) {

@@ -1,16 +1,18 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../data/aggregator.dart';
+import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 
 enum LoopMode { off, all, one }
 
-/// Аудио-хендлер поверх audio_service: владеет плеером и очередью, отдаёт
-/// состояние в системное уведомление / на локскрин и принимает оттуда команды.
+/// Аудио-хендлер поверх audio_service: владеет плеером, очередью и эквалайзером,
+/// отдаёт состояние в уведомление/локскрин и принимает оттуда команды.
 class RoundsAudioHandler extends BaseAudioHandler {
   RoundsAudioHandler(this._aggregator) {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
@@ -20,11 +22,16 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   final Aggregator _aggregator;
-  final AudioPlayer _player = AudioPlayer();
   final Random _rng = Random();
 
-  /// Возвращает локальный путь к скачанному треку (если есть) — для оффлайна.
-  /// Устанавливается из main().
+  final AndroidEqualizer _equalizer = AndroidEqualizer();
+  late final AudioPlayer _player = AudioPlayer(
+    audioPipeline: AudioPipeline(androidAudioEffects: [_equalizer]),
+  );
+
+  AndroidEqualizer get equalizer => _equalizer;
+
+  /// Локальный путь к скачанному треку (оффлайн). Ставится из main().
   String? Function(String uid)? localFileResolver;
 
   final List<Track> _queue = [];
@@ -33,6 +40,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   String? _error;
   bool _shuffle = false;
   LoopMode _repeat = LoopMode.off;
+
+  // Предзагрузка следующего трека.
+  String? _preUid;
+  PlayableStream? _preStream;
 
   void Function()? onUiChanged;
   void _notify() => onUiChanged?.call();
@@ -88,21 +99,45 @@ class RoundsAudioHandler extends BaseAudioHandler {
     try {
       final local = localFileResolver?.call(track.uid);
       if (local != null) {
-        // Оффлайн — играем скачанный файл.
         await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
       } else {
-        final stream = await _aggregator.resolveStreamWithFallback(track);
+        PlayableStream stream;
+        if (_preUid == track.uid &&
+            _preStream != null &&
+            !_preStream!.isExpired) {
+          stream = _preStream!; // готовая ссылка из предзагрузки
+        } else {
+          stream = await _aggregator.resolveStreamWithFallback(track);
+        }
+        _preUid = null;
+        _preStream = null;
         await _player.setAudioSource(
           AudioSource.uri(stream.uri, headers: stream.headers),
         );
       }
       _player.play();
+      unawaited(_preloadNext());
     } catch (e) {
       _error = e.toString();
     } finally {
       _loading = false;
       _notify();
     }
+  }
+
+  /// Заранее резолвит ссылку следующего трека (только при выключенном shuffle).
+  Future<void> _preloadNext() async {
+    if (_shuffle) return;
+    final ni = _index + 1;
+    if (ni >= _queue.length) return;
+    final next = _queue[ni];
+    if (localFileResolver?.call(next.uid) != null) return;
+    if (_preUid == next.uid) return;
+    try {
+      final s = await _aggregator.resolveStreamWithFallback(next);
+      _preUid = next.uid;
+      _preStream = s;
+    } catch (_) {/* не критично */}
   }
 
   MediaItem _toMediaItem(Track t) => MediaItem(
@@ -127,8 +162,6 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
-  // --- навигация по очереди ---
-
   Future<void> _onComplete() => _advance(auto: true);
 
   Future<void> _advance({required bool auto}) async {
@@ -148,14 +181,12 @@ class RoundsAudioHandler extends BaseAudioHandler {
       if (_repeat == LoopMode.all) {
         next = 0;
       } else {
-        return; // конец очереди
+        return;
       }
     }
     _index = next;
     await _load();
   }
-
-  // --- команды из системного UI / приложения ---
 
   @override
   Future<void> play() => _player.play();

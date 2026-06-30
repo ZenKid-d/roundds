@@ -18,6 +18,8 @@ class LibraryController extends ChangeNotifier {
   final List<Track> _history = [];
   final List<PlaylistX> _playlists = [];
   final List<Track> _liked = [];
+  final Map<String, Track> _statTrack = {};
+  final Map<String, int> _statCount = {};
 
   List<Track> get history => List.unmodifiable(_history);
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
@@ -45,8 +47,47 @@ class LibraryController extends ChangeNotifier {
         ..addAll((jsonDecode(l) as List)
             .map((e) => Track.fromJson((e as Map).cast<String, dynamic>())));
     }
+    final s = _prefs.getString('stats');
+    if (s != null) {
+      for (final e in (jsonDecode(s) as List)) {
+        final m = (e as Map).cast<String, dynamic>();
+        final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
+        _statTrack[t.uid] = t;
+        _statCount[t.uid] = m['count'] as int;
+      }
+    }
     notifyListeners();
   }
+
+  /// Топ треков по числу прослушиваний.
+  List<MapEntry<Track, int>> topTracks({int limit = 50}) {
+    final entries = _statTrack.values
+        .map((t) => MapEntry(t, _statCount[t.uid] ?? 0))
+        .toList()
+      ..sort((a, b) => b.value - a.value);
+    return entries.take(limit).toList();
+  }
+
+  /// Топ артистов по суммарному числу прослушиваний.
+  List<MapEntry<String, int>> topArtists({int limit = 20}) {
+    final byArtist = <String, int>{};
+    for (final t in _statTrack.values) {
+      byArtist[t.artist] = (byArtist[t.artist] ?? 0) + (_statCount[t.uid] ?? 0);
+    }
+    final entries = byArtist.entries.toList()
+      ..sort((a, b) => b.value - a.value);
+    return entries.take(limit).toList();
+  }
+
+  int get totalPlays =>
+      _statCount.values.fold(0, (sum, c) => sum + c);
+
+  Future<void> _persistStats() => _prefs.setString(
+        'stats',
+        jsonEncode(_statTrack.values
+            .map((t) => {'track': t.toJson(), 'count': _statCount[t.uid]})
+            .toList()),
+      );
 
   bool isLiked(Track t) => _liked.any((e) => e.uid == t.uid);
 
@@ -65,7 +106,10 @@ class LibraryController extends ChangeNotifier {
     _history.removeWhere((e) => e.uid == t.uid);
     _history.insert(0, t);
     if (_history.length > 50) _history.removeRange(50, _history.length);
+    _statTrack[t.uid] = t;
+    _statCount[t.uid] = (_statCount[t.uid] ?? 0) + 1;
     await _persistHistory();
+    await _persistStats();
     notifyListeners();
   }
 
@@ -73,6 +117,18 @@ class LibraryController extends ChangeNotifier {
     final pl = PlaylistX(
       id: 'pl_${DateTime.now().microsecondsSinceEpoch}',
       name: name,
+    );
+    _playlists.add(pl);
+    await _persistPlaylists();
+    notifyListeners();
+    return pl;
+  }
+
+  Future<PlaylistX> importPlaylist(String name, List<Track> tracks) async {
+    final pl = PlaylistX(
+      id: 'pl_${DateTime.now().microsecondsSinceEpoch}',
+      name: name,
+      tracks: List.of(tracks),
     );
     _playlists.add(pl);
     await _persistPlaylists();

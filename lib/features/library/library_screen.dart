@@ -43,9 +43,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                 ),
               ),
-              if (_tab == 0)
+              if (_tab == 0) ...[
+                IconButton(
+                    icon: const Icon(Icons.library_add_outlined),
+                    tooltip: 'Импорт плейлиста',
+                    onPressed: _import),
                 IconButton(
                     icon: const Icon(Icons.add), onPressed: _createPlaylist),
+              ],
             ],
           ),
         ),
@@ -65,6 +70,114 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final name = await _askName(context, 'Новый плейлист');
     if (name != null && name.isNotEmpty) {
       await ref.read(libraryProvider).createPlaylist(name);
+    }
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
+
+  void _showLoading() => showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+  Future<void> _import() async {
+    final src = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface1,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Импорт плейлиста',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ),
+            ListTile(
+                leading: const Icon(Icons.ondemand_video),
+                title: const Text('Из YouTube (ссылка)'),
+                onTap: () => Navigator.pop(context, 'youtube')),
+            ListTile(
+                leading: const Icon(Icons.library_music),
+                title: const Text('Из Яндекса (мои плейлисты)'),
+                onTap: () => Navigator.pop(context, 'yandex')),
+          ],
+        ),
+      ),
+    );
+    if (src == 'youtube') {
+      await _importYoutube();
+    } else if (src == 'yandex') {
+      await _importYandex();
+    }
+  }
+
+  Future<void> _importYoutube() async {
+    final url = await _askName(context, 'Ссылка на плейлист YouTube');
+    if (url == null || url.isEmpty) return;
+    _showLoading();
+    try {
+      final res = await ref.read(youtubeSourceProvider).importPlaylist(url);
+      if (mounted) Navigator.pop(context);
+      await ref.read(libraryProvider).importPlaylist(res.title, res.tracks);
+      _snack('Импортировано: ${res.title} (${res.tracks.length} треков)');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('Ошибка импорта: $e');
+    }
+  }
+
+  Future<void> _importYandex() async {
+    if (!ref.read(settingsProvider).hasYandexToken) {
+      _snack('Сначала добавьте токен Яндекса в Настройках');
+      return;
+    }
+    _showLoading();
+    List<({int kind, String title, int count})> pls;
+    try {
+      pls = await ref.read(yandexSourceProvider).userPlaylists();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('Ошибка: $e');
+      return;
+    }
+    if (!mounted) return;
+    final picked =
+        await showModalBottomSheet<({int kind, String title, int count})>(
+      context: context,
+      backgroundColor: AppColors.surface1,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Выберите плейлист',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ),
+            for (final p in pls)
+              ListTile(
+                  title: Text(p.title),
+                  subtitle: Text('${p.count} треков'),
+                  onTap: () => Navigator.pop(context, p)),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    _showLoading();
+    try {
+      final tracks =
+          await ref.read(yandexSourceProvider).playlistTracks(picked.kind);
+      if (mounted) Navigator.pop(context);
+      await ref.read(libraryProvider).importPlaylist(picked.title, tracks);
+      _snack('Импортировано: ${picked.title} (${tracks.length} треков)');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('Ошибка: $e');
     }
   }
 }

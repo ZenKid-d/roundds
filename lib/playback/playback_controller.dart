@@ -56,6 +56,7 @@ class PlaybackController extends ChangeNotifier {
     }
   }
 
+  Future<void> pause() => _handler.pause();
   Future<void> next() => _handler.skipToNext();
   Future<void> previous() => _handler.skipToPrevious();
   Future<void> seek(Duration to) => _handler.seek(to);

@@ -9,6 +9,8 @@ import '../../core/widgets/track_card.dart';
 import '../../core/widgets/vinyl_disc.dart';
 import '../../domain/models/track.dart';
 import '../../playback/audio_handler.dart';
+import '../artist/artist_screen.dart';
+import 'equalizer_screen.dart';
 import 'lyrics_screen.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
@@ -42,7 +44,7 @@ class NowPlayingScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 22),
             child: Column(
               children: [
-                _topBar(context, track),
+                _topBar(context, ref, track),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Center(
@@ -62,10 +64,16 @@ class NowPlayingScreen extends ConsumerWidget {
                     style: const TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 3),
-                Text(track.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: AppColors.white45)),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ArtistScreen(artist: track.artist),
+                  )),
+                  child: Text(track.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(fontSize: 13, color: AppColors.white45)),
+                ),
                 const SizedBox(height: 11),
                 ServicePill(track.source),
                 if (pc.error != null) _errorBox(context, ref, track, pc.error!),
@@ -83,7 +91,7 @@ class NowPlayingScreen extends ConsumerWidget {
     );
   }
 
-  Widget _topBar(BuildContext context, Track track) {
+  Widget _topBar(BuildContext context, WidgetRef ref, Track track) {
     return Row(
       children: [
         IconButton(
@@ -96,7 +104,9 @@ class NowPlayingScreen extends ConsumerWidget {
               style: TextStyle(
                   fontSize: 10.5, letterSpacing: 1.5, color: Colors.white54)),
         ),
-        IconButton(icon: const Icon(Icons.more_horiz), onPressed: () {}),
+        IconButton(
+            icon: const Icon(Icons.more_horiz),
+            onPressed: () => _moreMenu(context, ref)),
       ],
     );
   }
@@ -334,6 +344,81 @@ class NowPlayingScreen extends ConsumerWidget {
               onPressed: () => ref.read(playbackProvider).playTrack(track),
               child: const Text('Повтор'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _moreMenu(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface1,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.equalizer),
+              title: const Text('Эквалайзер'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const EqualizerScreen()));
+              },
+            ),
+            Consumer(builder: (context, ref, _) {
+              final timer = ref.watch(sleepTimerProvider);
+              final rem = timer.remaining;
+              return ListTile(
+                leading: const Icon(Icons.bedtime_outlined),
+                title: const Text('Таймер сна'),
+                subtitle: rem != null ? Text('Осталось ${_fmt(rem)}') : null,
+                trailing: timer.active
+                    ? TextButton(
+                        onPressed: () =>
+                            ref.read(sleepTimerProvider).cancel(),
+                        child: const Text('Стоп'))
+                    : null,
+                onTap: () {
+                  Navigator.pop(context);
+                  _sleepSheet(context, ref);
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _sleepSheet(BuildContext context, WidgetRef ref) {
+    const options = {'15 минут': 15, '30 минут': 30, '45 минут': 45, '1 час': 60};
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface1,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Уснуть через',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ),
+            for (final e in options.entries)
+              ListTile(
+                title: Text(e.key),
+                onTap: () {
+                  ref.read(sleepTimerProvider).start(
+                        Duration(minutes: e.value),
+                        () => ref.read(playbackProvider).pause(),
+                      );
+                  Navigator.pop(context);
+                  _todo(context, 'Таймер сна: ${e.key}');
+                },
+              ),
           ],
         ),
       ),

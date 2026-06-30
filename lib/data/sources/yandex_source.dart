@@ -25,7 +25,50 @@ class YandexSource implements MusicSource {
   @override
   SourceType get type => SourceType.yandex;
 
-  void setToken(String? token) => _token = token;
+  int? _uid;
+
+  void setToken(String? token) {
+    _token = token;
+    _uid = null;
+  }
+
+  Future<int> _ensureUid() async {
+    if (_uid != null) return _uid!;
+    final r = await _dio.get('$_base/account/status', options: _opts);
+    _uid = (r.data['result']?['account']?['uid'] as num).toInt();
+    return _uid!;
+  }
+
+  /// Список плейлистов пользователя (для импорта).
+  Future<List<({int kind, String title, int count})>> userPlaylists() async {
+    _requireToken();
+    final uid = await _ensureUid();
+    final r =
+        await _dio.get('$_base/users/$uid/playlists/list', options: _opts);
+    final list = (r.data['result'] as List? ?? []);
+    return list
+        .whereType<Map>()
+        .map((e) => (
+              kind: (e['kind'] as num).toInt(),
+              title: e['title'] as String? ?? 'Плейлист',
+              count: (e['trackCount'] as num?)?.toInt() ?? 0,
+            ))
+        .toList();
+  }
+
+  /// Треки плейлиста пользователя по его kind.
+  Future<List<Track>> playlistTracks(int kind) async {
+    _requireToken();
+    final uid = await _ensureUid();
+    final r =
+        await _dio.get('$_base/users/$uid/playlists/$kind', options: _opts);
+    final tracks = (r.data['result']?['tracks'] as List? ?? []);
+    return tracks
+        .map((e) => (e as Map)['track'])
+        .whereType<Map>()
+        .map((e) => _toTrack(e.cast<String, dynamic>()))
+        .toList();
+  }
 
   @override
   Future<bool> get isReady async => _token != null && _token!.isNotEmpty;
