@@ -11,13 +11,23 @@ import '../../domain/music_source.dart';
 /// ⚠️ Нарушает ToS SoundCloud. client_id периодически протухает —
 /// в Settings есть кнопка «обновить client_id».
 class SoundcloudSource implements MusicSource {
-  SoundcloudSource(this._dio, {String? cachedClientId})
-      : _clientId = cachedClientId;
+  SoundcloudSource(this._dio, {String? cachedClientId, String? token})
+      : _clientId = cachedClientId,
+        _oauthToken = token;
 
   final Dio _dio;
   String? _clientId;
+  String? _oauthToken;
 
   static const _apiBase = 'https://api-v2.soundcloud.com';
+
+  /// OAuth-токен аккаунта. С подпиской Go+ открывает полные потоки треков,
+  /// которые покрыты подпиской пользователя (легитимный доступ к оплаченному).
+  void setToken(String? token) => _oauthToken = token;
+  bool get hasToken => (_oauthToken ?? '').isNotEmpty;
+
+  Map<String, dynamic> get _authHeaders =>
+      hasToken ? {'Authorization': 'OAuth $_oauthToken'} : const {};
 
   @override
   SourceType get type => SourceType.soundcloud;
@@ -87,11 +97,13 @@ class SoundcloudSource implements MusicSource {
   Future<List<Track>> search(String query, {int limit = 20}) async {
     await _ensureClientId();
     try {
-      final r = await _dio.get('$_apiBase/search/tracks', queryParameters: {
-        'q': query,
-        'client_id': _clientId,
-        'limit': limit,
-      });
+      final r = await _dio.get('$_apiBase/search/tracks',
+          queryParameters: {
+            'q': query,
+            'client_id': _clientId,
+            'limit': limit,
+          },
+          options: Options(headers: _authHeaders));
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
@@ -109,12 +121,14 @@ class SoundcloudSource implements MusicSource {
     await _ensureClientId();
     // «Лента» — популярное в основных жанрах за неделю.
     try {
-      final r = await _dio.get('$_apiBase/charts', queryParameters: {
-        'kind': 'top',
-        'genre': 'soundcloud:genres:all-music',
-        'client_id': _clientId,
-        'limit': limit,
-      });
+      final r = await _dio.get('$_apiBase/charts',
+          queryParameters: {
+            'kind': 'top',
+            'genre': 'soundcloud:genres:all-music',
+            'client_id': _clientId,
+            'limit': limit,
+          },
+          options: Options(headers: _authHeaders));
       final list = (r.data['collection'] as List? ?? []);
       return list
           .map((e) => (e as Map)['track'])
@@ -150,8 +164,9 @@ class SoundcloudSource implements MusicSource {
       final url = t['url'] as String?;
       if (url == null) continue;
       try {
-        final r =
-            await _dio.get(url, queryParameters: {'client_id': _clientId});
+        final r = await _dio.get(url,
+            queryParameters: {'client_id': _clientId},
+            options: Options(headers: _authHeaders));
         final streamUrl = (r.data as Map)['url'] as String?;
         if (streamUrl != null && streamUrl.isNotEmpty) {
           return PlayableStream(

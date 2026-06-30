@@ -34,6 +34,8 @@ class SettingsScreen extends ConsumerWidget {
         _YandexToken(settings.hasYandexToken),
         const SizedBox(height: 16),
         const _Header('SoundCloud'),
+        _SoundcloudToken(settings.hasSoundcloudToken),
+        const SizedBox(height: 10),
         const _SoundcloudClientId(),
         const SizedBox(height: 24),
         const _About(),
@@ -43,7 +45,8 @@ class SettingsScreen extends ConsumerWidget {
 
   String _sourceHint(SourceType s) => switch (s) {
         SourceType.youtube => 'Играет внутри приложения. Ключи не нужны.',
-        SourceType.soundcloud => 'Играет внутри. Нужен публичный client_id.',
+        SourceType.soundcloud =>
+          'Играет внутри. Go+ — по токену твоей подписки.',
         SourceType.yandex => 'Играет внутри. Нужен токен аккаунта (риск бана).',
       };
 }
@@ -136,6 +139,77 @@ class _YandexTokenState extends ConsumerState<_YandexToken> {
               onPressed: () => ref
                   .read(settingsProvider)
                   .setYandexToken(_c.text.trim()),
+              child: const Text('Сохранить токен'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SoundcloudToken extends ConsumerStatefulWidget {
+  const _SoundcloudToken(this.hasToken);
+  final bool hasToken;
+  @override
+  ConsumerState<_SoundcloudToken> createState() => _SoundcloudTokenState();
+}
+
+class _SoundcloudTokenState extends ConsumerState<_SoundcloudToken> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'OAuth-токен твоего аккаунта SoundCloud — открывает полные треки Go+, '
+          'покрытые твоей подпиской.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
+        ),
+        const SizedBox(height: 8),
+        if (widget.hasToken)
+          Row(
+            children: [
+              const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
+              const SizedBox(width: 8),
+              const Text('Токен сохранён'),
+              const Spacer(),
+              TextButton(
+                onPressed: () =>
+                    ref.read(settingsProvider).setSoundcloudToken(null),
+                child: const Text('Удалить'),
+              ),
+            ],
+          )
+        else ...[
+          TextField(
+            controller: _c,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: 'OAuth-токен SoundCloud (2-xxxxxx-...)',
+              filled: true,
+              fillColor: AppColors.surface2,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => ref
+                  .read(settingsProvider)
+                  .setSoundcloudToken(_c.text.trim()),
               child: const Text('Сохранить токен'),
             ),
           ),

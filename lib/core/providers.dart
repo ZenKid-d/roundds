@@ -59,6 +59,7 @@ final settingsProvider =
     prefs: ref.read(prefsProvider),
     secure: ref.read(secureStorageProvider),
     yandex: ref.read(yandexSourceProvider),
+    soundcloud: ref.read(soundcloudSourceProvider),
     aggregator: ref.read(aggregatorProvider),
   );
   c.load();
