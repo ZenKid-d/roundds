@@ -1,16 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
+import '../../data/recommendation_service.dart';
 import '../../domain/models/track.dart';
 
 /// Лента главного экрана — микс из всех включённых источников.
 final feedProvider = FutureProvider<List<Track>>((ref) async {
-  ref.watch(settingsProvider); // пере-загрузка при смене набора источников
+  ref.watch(settingsProvider);
   return ref.read(aggregatorProvider).feed();
+});
+
+/// Персональные рекомендации (на основе истории/лайков/статистики).
+/// Читаем библиотеку через read (не watch), чтобы не пересчитывать на каждый трек.
+final recommendationsProvider = FutureProvider<List<RecoRow>>((ref) async {
+  ref.watch(settingsProvider);
+  final lib = ref.read(libraryProvider);
+  if (lib.history.isEmpty && lib.liked.isEmpty) return const [];
+  return ref.read(recommendationServiceProvider).forYou(
+        history: lib.history,
+        liked: lib.liked,
+        topTracks: lib.topTracks(limit: 10),
+        topArtists: lib.topArtists(limit: 5),
+      );
 });
 
 class HomeScreen extends ConsumerWidget {
@@ -18,36 +34,33 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final history = ref.watch(libraryProvider).history;
+    final lib = ref.watch(libraryProvider);
+    final history = lib.history;
     final feed = ref.watch(feedProvider);
+    final recos = ref.watch(recommendationsProvider).value ?? const <RecoRow>[];
+    final canRadio = history.isNotEmpty || lib.liked.isNotEmpty;
 
     return RefreshIndicator(
-      onRefresh: () async => ref.refresh(feedProvider.future),
+      onRefresh: () async {
+        ref.invalidate(recommendationsProvider);
+        ref.invalidate(feedProvider);
+        await ref.read(feedProvider.future);
+      },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: _Greeting()),
+          if (canRadio)
+            SliverToBoxAdapter(
+              child: _RadioCard(onTap: () => _startTasteRadio(ref, context)),
+            ),
           if (history.isNotEmpty) ...[
             const _SectionHeader('Продолжить слушать'),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 172,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: history.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (_, i) => SizedBox(
-                    width: 132,
-                    child: TrackCard(
-                      track: history[i],
-                      onTap: () => playTrack(ref, context, history[i],
-                          queue: history),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            SliverToBoxAdapter(child: _trackHRow(ref, context, history)),
+          ],
+          for (final row in recos) ...[
+            _SectionHeader(row.title),
+            SliverToBoxAdapter(child: _trackHRow(ref, context, row.tracks)),
           ],
           const _SectionHeader('Со всех сервисов'),
           feed.when(
@@ -87,6 +100,87 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
+Widget _trackHRow(WidgetRef ref, BuildContext context, List<Track> tracks) {
+  return SizedBox(
+    height: 172,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: tracks.length,
+      separatorBuilder: (_, __) => const SizedBox(width: 12),
+      itemBuilder: (_, i) => SizedBox(
+        width: 132,
+        child: TrackCard(
+          track: tracks[i],
+          onTap: () => playTrack(ref, context, tracks[i], queue: tracks),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _startTasteRadio(WidgetRef ref, BuildContext context) async {
+  final lib = ref.read(libraryProvider);
+  final seed = lib.history.isNotEmpty
+      ? lib.history.first
+      : (lib.liked.isNotEmpty ? lib.liked.first : null);
+  if (seed == null) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Собираю радио…'), duration: Duration(seconds: 1)));
+  final list = await ref.read(recommendationServiceProvider).radioFrom(seed);
+  await ref.read(playbackProvider).startRadio(seed, list);
+  ref.read(libraryProvider).pushHistory(seed);
+  if (context.mounted) context.push('/player');
+}
+
+class _RadioCard extends StatelessWidget {
+  const _RadioCard({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                child: const Icon(Icons.radio, color: Colors.black, size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Моё радио',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                    Text('Бесконечный микс по вашим вкусам',
+                        style: TextStyle(fontSize: 11.5, color: Colors.white60)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.play_arrow, size: 26),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Greeting extends StatelessWidget {
   const _Greeting();
 
@@ -118,6 +212,8 @@ class _SectionHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
         child: Text(title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style:
                 const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
       ),

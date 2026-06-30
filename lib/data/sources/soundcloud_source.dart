@@ -143,6 +143,24 @@ class SoundcloudSource implements MusicSource {
     }
   }
 
+  /// Похожие/связанные треки (для рекомендаций и радио).
+  Future<List<Track>> related(String trackId, {int limit = 20}) async {
+    await _ensureClientId();
+    try {
+      final r = await _dio.get('$_apiBase/tracks/$trackId/related',
+          queryParameters: {'client_id': _clientId, 'limit': limit},
+          options: Options(headers: _authHeaders));
+      final list = (r.data['collection'] as List? ?? []);
+      return list
+          .whereType<Map>()
+          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .whereType<Track>()
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     await _ensureClientId();

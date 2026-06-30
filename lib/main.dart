@@ -7,6 +7,7 @@ import 'app.dart';
 import 'core/downloads_controller.dart';
 import 'core/providers.dart';
 import 'data/aggregator.dart';
+import 'data/recommendation_service.dart';
 import 'data/sources/soundcloud_source.dart';
 import 'data/sources/yandex_source.dart';
 import 'data/sources/youtube_music_source.dart';
@@ -32,6 +33,7 @@ Future<void> main() async {
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);
+  final reco = RecommendationService(soundcloud, yandex, aggregator);
 
   // Фоновое воспроизведение + уведомление + управление с локскрина.
   final handler = await AudioService.init(
@@ -44,6 +46,8 @@ Future<void> main() async {
   );
   // Оффлайн: плеер сначала ищет скачанный файл.
   handler.localFileResolver = downloads.localPathFor;
+  // Радио: докрутка очереди похожими треками.
+  handler.radioExtender = reco.similarTo;
 
   runApp(
     ProviderScope(
@@ -56,6 +60,7 @@ Future<void> main() async {
         aggregatorProvider.overrideWithValue(aggregator),
         audioHandlerProvider.overrideWithValue(handler),
         downloadsProvider.overrideWith((ref) => downloads),
+        recommendationServiceProvider.overrideWithValue(reco),
       ],
       child: const RoundedsApp(),
     ),

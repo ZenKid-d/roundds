@@ -9,6 +9,7 @@ import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
 import '../data/lyrics_service.dart';
+import '../data/recommendation_service.dart';
 import 'theme/theme_settings.dart';
 import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
@@ -88,6 +89,10 @@ final sleepTimerProvider = ChangeNotifierProvider<SleepTimerController>(
 
 final themeSettingsProvider = ChangeNotifierProvider<ThemeSettingsController>(
     (ref) => ThemeSettingsController(ref.read(prefsProvider)));
+
+/// Переопределяется в main() (нужны те же экземпляры источников/агрегатора).
+final recommendationServiceProvider = Provider<RecommendationService>(
+    (ref) => throw UnimplementedError('reco override missing'));
 
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(

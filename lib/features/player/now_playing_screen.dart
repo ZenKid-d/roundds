@@ -128,7 +128,7 @@ class NowPlayingScreen extends ConsumerWidget {
         ),
         IconButton(
             icon: const Icon(Icons.more_horiz),
-            onPressed: () => _moreMenu(context, ref)),
+            onPressed: () => _moreMenu(context, ref, track)),
       ],
     );
   }
@@ -372,7 +372,7 @@ class NowPlayingScreen extends ConsumerWidget {
     );
   }
 
-  void _moreMenu(BuildContext context, WidgetRef ref) {
+  void _moreMenu(BuildContext context, WidgetRef ref, Track track) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface1,
@@ -380,6 +380,17 @@ class NowPlayingScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.radio),
+              title: const Text('Радио по этому треку'),
+              onTap: () async {
+                Navigator.pop(context);
+                final list = await ref
+                    .read(recommendationServiceProvider)
+                    .radioFrom(track);
+                await ref.read(playbackProvider).startRadio(track, list);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.equalizer),
               title: const Text('Эквалайзер'),

@@ -41,6 +41,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   bool _shuffle = false;
   LoopMode _repeat = LoopMode.off;
 
+  // Радио: бесконечный микс, докручивается похожими.
+  bool radioMode = false;
+  Future<List<Track>> Function(Track seed)? radioExtender;
+
   // Предзагрузка следующего трека.
   String? _preUid;
   PlayableStream? _preStream;
@@ -68,6 +72,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
+    radioMode = false;
     if (queue != null) {
       _queue
         ..clear()
@@ -117,12 +122,40 @@ class RoundsAudioHandler extends BaseAudioHandler {
       }
       _player.play();
       unawaited(_preloadNext());
+      unawaited(_maybeExtendRadio());
     } catch (e) {
       _error = e.toString();
     } finally {
       _loading = false;
       _notify();
     }
+  }
+
+  /// Запуск радио: очередь из похожих, дальше докручивается на лету.
+  Future<void> playRadio(Track seed, List<Track> queue) async {
+    radioMode = true;
+    _queue
+      ..clear()
+      ..addAll(queue);
+    _index = _queue.indexOf(seed);
+    if (_index < 0) {
+      _queue.insert(0, seed);
+      _index = 0;
+    }
+    await _load();
+  }
+
+  Future<void> _maybeExtendRadio() async {
+    if (!radioMode || radioExtender == null) return;
+    if (_index < _queue.length - 2) return;
+    final seed = current;
+    if (seed == null) return;
+    try {
+      final more = await radioExtender!(seed);
+      final have = _queue.map((t) => t.uid).toSet();
+      _queue.addAll(more.where((t) => !have.contains(t.uid)));
+      _notify();
+    } catch (_) {}
   }
 
   /// Заранее резолвит ссылку следующего трека (только при выключенном shuffle).

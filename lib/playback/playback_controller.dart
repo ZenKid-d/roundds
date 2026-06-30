@@ -47,6 +47,10 @@ class PlaybackController extends ChangeNotifier {
   Future<void> playTrack(Track track, {List<Track>? queue}) =>
       _handler.playTrack(track, queue: queue);
 
+  Future<void> startRadio(Track seed, List<Track> queue) =>
+      _handler.playRadio(seed, queue);
+  bool get isRadio => _handler.radioMode;
+
   Future<void> togglePlay() async {
     if (current == null) return;
     if (_playing) {

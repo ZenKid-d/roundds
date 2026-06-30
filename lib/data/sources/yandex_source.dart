@@ -121,6 +121,23 @@ class YandexSource implements MusicSource {
     }
   }
 
+  /// Похожие треки (для рекомендаций и радио).
+  Future<List<Track>> similar(String trackId, {int limit = 30}) async {
+    if (_token == null || _token!.isEmpty) return const [];
+    try {
+      final r =
+          await _dio.get('$_base/tracks/$trackId/similar', options: _opts);
+      final list = (r.data['result']?['similarTracks'] as List? ?? []);
+      return list
+          .whereType<Map>()
+          .take(limit)
+          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     _requireToken();
