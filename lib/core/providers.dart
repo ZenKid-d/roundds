@@ -8,6 +8,7 @@ import '../data/sources/soundcloud_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
 import 'library_controller.dart';
 import 'settings_controller.dart';
@@ -19,17 +20,16 @@ final prefsProvider = Provider<SharedPreferences>(
 final secureStorageProvider =
     Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
 
-final dioProvider = Provider<Dio>((ref) {
-  final dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 20),
-    headers: const {
-      'User-Agent':
-          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Roundds/0.1',
-    },
-  ));
-  return dio;
-});
+Dio buildAppDio() => Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+      headers: const {
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Roundds/0.1',
+      },
+    ));
+
+final dioProvider = Provider<Dio>((ref) => buildAppDio());
 
 final youtubeSourceProvider =
     Provider<YoutubeMusicSource>((ref) => YoutubeMusicSource());
@@ -65,8 +65,12 @@ final settingsProvider =
   return c;
 });
 
+/// Переопределяется в main() экземпляром из AudioService.init().
+final audioHandlerProvider = Provider<RoundsAudioHandler>(
+    (ref) => throw UnimplementedError('audioHandler override missing'));
+
 final playbackProvider = ChangeNotifierProvider<PlaybackController>(
-    (ref) => PlaybackController(ref.read(aggregatorProvider)));
+    (ref) => PlaybackController(ref.read(audioHandlerProvider)));
 
 final libraryProvider = ChangeNotifierProvider<LibraryController>(
     (ref) => LibraryController(ref.read(prefsProvider)));
