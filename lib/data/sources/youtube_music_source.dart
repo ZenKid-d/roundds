@@ -14,6 +14,10 @@ class YoutubeMusicSource implements MusicSource {
 
   final YoutubeExplode _yt = YoutubeExplode();
 
+  // Музыкальный трек по длительности: ~45 сек … 12 мин.
+  static const _minSec = 45;
+  static const _maxSec = 720;
+
   @override
   SourceType get type => SourceType.youtube;
 
@@ -24,7 +28,7 @@ class YoutubeMusicSource implements MusicSource {
   Future<List<Track>> search(String query, {int limit = 20}) async {
     try {
       final results = await _yt.search.search(query);
-      return results.take(limit).map(_videoToTrack).toList();
+      return _onlyMusic(results).take(limit).toList();
     } catch (e) {
       throw SourceException(type, 'не удалось выполнить поиск ($e)');
     }
@@ -32,13 +36,12 @@ class YoutubeMusicSource implements MusicSource {
 
   @override
   Future<List<Track>> feed({int limit = 20}) async {
-    // У youtube_explode нет прямого «чарта»; используем сид-запросы как ленту.
     const seeds = ['Top hits 2025', 'Trending music', 'New music this week'];
     final out = <Track>[];
     for (final s in seeds) {
       try {
         final r = await _yt.search.search(s);
-        out.addAll(r.take((limit / seeds.length).ceil()).map(_videoToTrack));
+        out.addAll(_onlyMusic(r).take((limit / seeds.length).ceil()));
       } catch (_) {/* пропускаем неудачный сид */}
       if (out.length >= limit) break;
     }
@@ -48,20 +51,21 @@ class YoutubeMusicSource implements MusicSource {
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     try {
-      // androidVr — самый устойчивый клиент (без троттлинга и po_token),
-      // дальше откат на android/ios.
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        track.id,
-        ytClients: [
-          YoutubeApiClient.androidVr,
-          YoutubeApiClient.android,
-          YoutubeApiClient.ios,
-        ],
-      );
+      StreamManifest manifest;
+      try {
+        // Быстрый путь: VR-клиент без запроса watch-страницы — заметно быстрее.
+        manifest = await _yt.videos.streamsClient.getManifest(
+          track.id,
+          ytClients: [YoutubeApiClient.androidVr],
+          requireWatchPage: false,
+        );
+      } catch (_) {
+        // Надёжный откат на стандартные клиенты.
+        manifest = await _yt.videos.streamsClient.getManifest(track.id);
+      }
       final audio = manifest.audioOnly.isNotEmpty
           ? manifest.audioOnly.withHighestBitrate()
           : manifest.muxed.withHighestBitrate();
-      // URL действителен ограниченное время и привязан к сессии — короткий TTL.
       return PlayableStream(
         uri: audio.url,
         expiresAt: DateTime.now().add(const Duration(minutes: 30)),
@@ -71,14 +75,34 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
-  Track _videoToTrack(Video v) => Track(
-        id: v.id.value,
-        title: v.title,
-        artist: v.author,
-        artworkUrl: v.thumbnails.highResUrl,
-        duration: v.duration,
-        source: SourceType.youtube,
-      );
+  /// Оставляем только похожее на музыкальный трек: не прямой эфир и длительность
+  /// в окне песни. Это убирает обычные видео, эфиры, миксы и подкасты.
+  Iterable<Track> _onlyMusic(Iterable<Video> videos) {
+    return videos.where((v) {
+      if (v.isLive) return false;
+      final d = v.duration;
+      if (d == null) return false;
+      final s = d.inSeconds;
+      return s >= _minSec && s <= _maxSec;
+    }).map(_videoToTrack);
+  }
+
+  Track _videoToTrack(Video v) {
+    var artist = v.author;
+    // YouTube Music помечает авто-каналы артистов как «Имя - Topic».
+    const topic = ' - Topic';
+    if (artist.endsWith(topic)) {
+      artist = artist.substring(0, artist.length - topic.length);
+    }
+    return Track(
+      id: v.id.value,
+      title: v.title,
+      artist: artist,
+      artworkUrl: v.thumbnails.highResUrl,
+      duration: v.duration,
+      source: SourceType.youtube,
+    );
+  }
 
   void dispose() => _yt.close();
 }
