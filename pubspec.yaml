@@ -16,9 +16,8 @@ dependencies:
   # Navigation
   go_router: ^14.2.0
 
-  # Audio playback (in-app player + background + notification)
+  # Audio playback (in-app player)
   just_audio: ^0.9.40
-  just_audio_background: ^0.0.1-beta.13
 
   # Dynamic accent from artwork
   palette_generator: ^0.3.3+3

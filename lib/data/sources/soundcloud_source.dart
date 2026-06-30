@@ -36,22 +36,35 @@ class SoundcloudSource implements MusicSource {
 
   /// Достаём актуальный публичный client_id со страницы плеера.
   Future<String> refreshClientId() async {
-    final page = await _dio.get<String>('https://soundcloud.com/',
-        options: Options(responseType: ResponseType.plain));
-    final scripts = RegExp(r'<script[^>]+src="([^"]+)"')
-        .allMatches(page.data ?? '')
+    final page = await _dio.get<String>(
+      'https://soundcloud.com/discover',
+      options: Options(responseType: ResponseType.plain, headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }),
+    );
+    final html = page.data ?? '';
+    final scripts = RegExp('<script[^>]+src="([^"]+)"')
+        .allMatches(html)
         .map((m) => m.group(1)!)
-        .where((u) => u.contains('sndcdn.com'))
+        .where((u) => u.startsWith('http') && u.endsWith('.js'))
         .toList();
+    final patterns = [
+      RegExp(r'[,{(]client_id:"([A-Za-z0-9]{20,})"'),
+      RegExp(r'"client_id":"([A-Za-z0-9]{20,})"'),
+      RegExp(r'client_id=([A-Za-z0-9]{20,})'),
+    ];
     for (final url in scripts.reversed) {
       try {
         final js = await _dio.get<String>(url,
             options: Options(responseType: ResponseType.plain));
-        final m = RegExp(r'client_id\s*[:=]\s*"([A-Za-z0-9]{20,})"')
-            .firstMatch(js.data ?? '');
-        if (m != null) {
-          _clientId = m.group(1);
-          return _clientId!;
+        final body = js.data ?? '';
+        for (final p in patterns) {
+          final m = p.firstMatch(body);
+          if (m != null) {
+            _clientId = m.group(1);
+            return _clientId!;
+          }
         }
       } catch (_) {/* пробуем следующий скрипт */}
     }

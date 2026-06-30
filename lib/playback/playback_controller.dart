@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 
 import '../data/aggregator.dart';
-import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 
 /// Единый плеер приложения. Любой трек из любого источника резолвится в URL
@@ -80,20 +78,7 @@ class PlaybackController extends ChangeNotifier {
     try {
       final stream = await _aggregator.resolveStream(track);
       await _player.setAudioSource(
-        AudioSource.uri(
-          stream.uri,
-          headers: stream.headers,
-          tag: MediaItem(
-            id: track.uid,
-            title: track.title,
-            artist: track.artist,
-            album: track.source.label,
-            artUri: track.artworkUrl != null
-                ? Uri.tryParse(track.artworkUrl!)
-                : null,
-            duration: track.duration,
-          ),
-        ),
+        AudioSource.uri(stream.uri, headers: stream.headers),
       );
       await _player.play();
     } catch (e) {
