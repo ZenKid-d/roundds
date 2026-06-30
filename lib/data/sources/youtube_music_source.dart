@@ -53,11 +53,11 @@ class YoutubeMusicSource implements MusicSource {
     try {
       StreamManifest manifest;
       try {
-        // Быстрый путь: VR-клиент без запроса watch-страницы — заметно быстрее.
+        // Один android-клиент (с watch-страницей — иначе ссылка не играбельна
+        // из-за n-параметра/троттлинга). Быстрее, чем перебор нескольких клиентов.
         manifest = await _yt.videos.streamsClient.getManifest(
           track.id,
-          ytClients: [YoutubeApiClient.androidVr],
-          requireWatchPage: false,
+          ytClients: [YoutubeApiClient.android],
         );
       } catch (_) {
         // Надёжный откат на стандартные клиенты.

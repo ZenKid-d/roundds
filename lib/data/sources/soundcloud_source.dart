@@ -134,24 +134,37 @@ class SoundcloudSource implements MusicSource {
     await _ensureClientId();
     final transcodings =
         (track.extra['transcodings'] as List?)?.cast<Map>() ?? const [];
-    final progressive = transcodings.firstWhere(
-      (t) => (t['format']?['protocol']) == 'progressive',
-      orElse: () => transcodings.isNotEmpty ? transcodings.first : {},
-    );
-    final url = progressive['url'] as String?;
-    if (url == null) {
+    if (transcodings.isEmpty) {
       throw SourceException(type, 'нет доступного потока для трека');
     }
-    try {
-      final r = await _dio.get(url, queryParameters: {'client_id': _clientId});
-      final streamUrl = r.data['url'] as String;
-      return PlayableStream(
-        uri: Uri.parse(streamUrl),
-        expiresAt: DateTime.now().add(const Duration(minutes: 30)),
-      );
-    } catch (e) {
-      throw SourceException(type, 'поток недоступен ($e)');
+    // progressive (mp3) надёжнее всего; hls тоже играбелен в ExoPlayer.
+    int rank(Map t) {
+      final p = t['format']?['protocol'];
+      if (p == 'progressive') return 0;
+      if (p == 'hls') return 1;
+      return 2;
     }
+
+    final ordered = [...transcodings]..sort((a, b) => rank(a) - rank(b));
+    for (final t in ordered) {
+      final url = t['url'] as String?;
+      if (url == null) continue;
+      try {
+        final r =
+            await _dio.get(url, queryParameters: {'client_id': _clientId});
+        final streamUrl = (r.data as Map)['url'] as String?;
+        if (streamUrl != null && streamUrl.isNotEmpty) {
+          return PlayableStream(
+            uri: Uri.parse(streamUrl),
+            expiresAt: DateTime.now().add(const Duration(minutes: 30)),
+          );
+        }
+      } catch (_) {/* пробуем следующий транскодинг */}
+    }
+    throw SourceException(
+      type,
+      'поток недоступен — возможно, трек доступен только по подписке SoundCloud Go.',
+    );
   }
 
   Track? _toTrack(Map<String, dynamic> j) {
