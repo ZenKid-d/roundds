@@ -66,6 +66,7 @@ class NowPlayingScreen extends ConsumerWidget {
                     style: TextStyle(fontSize: 13, color: AppColors.white45)),
                 const SizedBox(height: 11),
                 ServicePill(track.source),
+                if (pc.error != null) _errorBox(context, ref, track, pc.error!),
                 const SizedBox(height: 14),
                 _progress(context, ref, pc.position, pc.duration),
                 _controls(context, ref, pc.isPlaying, pc.isLoading),
@@ -263,6 +264,39 @@ class NowPlayingScreen extends ConsumerWidget {
                   _todo(context, 'Добавлено в «${pl.name}»');
                 },
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _errorBox(
+      BuildContext context, WidgetRef ref, Track track, String error) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE24B4A).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border:
+              Border.all(color: const Color(0xFFE24B4A).withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline,
+                color: Color(0xFFE24B4A), size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(error,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Colors.white70)),
+            ),
+            TextButton(
+              onPressed: () => ref.read(playbackProvider).playTrack(track),
+              child: const Text('Повтор'),
+            ),
           ],
         ),
       ),

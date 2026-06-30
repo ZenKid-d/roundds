@@ -48,8 +48,19 @@ class YoutubeMusicSource implements MusicSource {
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(track.id);
-      final audio = manifest.audioOnly.withHighestBitrate();
+      // androidVr — самый устойчивый клиент (без троттлинга и po_token),
+      // дальше откат на android/ios.
+      final manifest = await _yt.videos.streamsClient.getManifest(
+        track.id,
+        ytClients: [
+          YoutubeApiClient.androidVr,
+          YoutubeApiClient.android,
+          YoutubeApiClient.ios,
+        ],
+      );
+      final audio = manifest.audioOnly.isNotEmpty
+          ? manifest.audioOnly.withHighestBitrate()
+          : manifest.muxed.withHighestBitrate();
       // URL действителен ограниченное время и привязан к сессии — короткий TTL.
       return PlayableStream(
         uri: audio.url,
