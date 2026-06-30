@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -80,7 +82,9 @@ class PlaybackController extends ChangeNotifier {
       await _player.setAudioSource(
         AudioSource.uri(stream.uri, headers: stream.headers),
       );
-      await _player.play();
+      // ВАЖНО: play() завершается только когда трек закончился/поставлен на
+      // паузу — НЕ ждём его, иначе флаг загрузки висит весь трек.
+      unawaited(_player.play());
     } catch (e) {
       _error = e.toString();
     } finally {

@@ -35,10 +35,16 @@ class SoundcloudSource implements MusicSource {
   String? get clientId => _clientId;
 
   /// Достаём актуальный публичный client_id со страницы плеера.
+  // Десктопный User-Agent — с Android-UA SoundCloud отдаёт другую страницу.
+  static const _ua =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+
   Future<String> refreshClientId() async {
     final page = await _dio.get<String>(
       'https://soundcloud.com/discover',
       options: Options(responseType: ResponseType.plain, headers: {
+        'User-Agent': _ua,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
         'Accept-Language': 'en-US,en;q=0.9',
       }),
@@ -50,14 +56,16 @@ class SoundcloudSource implements MusicSource {
         .where((u) => u.startsWith('http') && u.endsWith('.js'))
         .toList();
     final patterns = [
-      RegExp(r'[,{(]client_id:"([A-Za-z0-9]{20,})"'),
+      RegExp(r'client_id:"([A-Za-z0-9]{20,})"'),
       RegExp(r'"client_id":"([A-Za-z0-9]{20,})"'),
       RegExp(r'client_id=([A-Za-z0-9]{20,})'),
     ];
     for (final url in scripts.reversed) {
       try {
         final js = await _dio.get<String>(url,
-            options: Options(responseType: ResponseType.plain));
+            options: Options(
+                responseType: ResponseType.plain,
+                headers: {'User-Agent': _ua}));
         final body = js.data ?? '';
         for (final p in patterns) {
           final m = p.firstMatch(body);
