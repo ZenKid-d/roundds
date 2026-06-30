@@ -66,7 +66,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
     mediaItem.add(_toMediaItem(track));
     try {
-      final stream = await _aggregator.resolveStream(track);
+      final stream = await _aggregator.resolveStreamWithFallback(track);
       await _player.setAudioSource(
         AudioSource.uri(stream.uri, headers: stream.headers),
       );

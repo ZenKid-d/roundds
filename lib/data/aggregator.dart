@@ -52,6 +52,29 @@ class Aggregator {
   Future<PlayableStream> resolveStream(Track track) =>
       _sources[track.source]!.resolveStream(track);
 
+  /// Резолв с умной маршрутизацией: если родной источник не отдал поток
+  /// (например, трек на SoundCloud доступен только по подписке Go+, или ошибка),
+  /// берём ту же песню из YouTube — бесплатного источника. Это НЕ обход
+  /// пейволла SoundCloud, а переход на доступный источник того же трека.
+  Future<PlayableStream> resolveStreamWithFallback(Track track) async {
+    try {
+      return await _sources[track.source]!.resolveStream(track);
+    } catch (e) {
+      final yt = _sources[SourceType.youtube];
+      final canFallback = track.source != SourceType.youtube &&
+          yt != null &&
+          _enabled.contains(SourceType.youtube);
+      if (canFallback) {
+        final query = '${track.artist} ${track.title}'.trim();
+        final results = await yt.search(query, limit: 1);
+        if (results.isNotEmpty) {
+          return await yt.resolveStream(results.first);
+        }
+      }
+      rethrow;
+    }
+  }
+
   List<Track> _interleave(List<List<Track>> lists) {
     final out = <Track>[];
     final seen = <String>{};
