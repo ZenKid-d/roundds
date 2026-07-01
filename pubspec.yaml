@@ -36,6 +36,11 @@ dependencies:
   # Brand icons (логотипы сервисов)
   font_awesome_flutter: ^11.0.0
 
+  # Вход в Google для импорта лайков YouTube Music (официальный YouTube Data API)
+  google_sign_in: ^6.2.1
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  googleapis: ^13.2.0
+
   # Sources
   youtube_explode_dart: ^2.2.1
 

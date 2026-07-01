@@ -8,6 +8,7 @@ import '../data/sources/soundcloud_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../data/google_yt_import.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
 import 'theme/theme_settings.dart';
@@ -98,6 +99,9 @@ final themeSettingsProvider = ChangeNotifierProvider<ThemeSettingsController>(
 /// Переопределяется в main() (нужны те же экземпляры источников/агрегатора).
 final recommendationServiceProvider = Provider<RecommendationService>(
     (ref) => throw UnimplementedError('reco override missing'));
+
+final googleYtImportProvider =
+    Provider<GoogleYtImportService>((ref) => GoogleYtImportService());
 
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(

@@ -102,6 +102,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 title: const Text('Из YouTube (ссылка)'),
                 onTap: () => Navigator.pop(context, 'youtube')),
             ListTile(
+                leading: const FaIcon(FontAwesomeIcons.youtube,
+                    color: Color(0xFFFF0000), size: 20),
+                title: const Text('Лайки YouTube Music (вход Google)'),
+                onTap: () => Navigator.pop(context, 'ytlikes')),
+            ListTile(
                 leading: const FaIcon(FontAwesomeIcons.yandex,
                     color: Color(0xFFFFCC00), size: 20),
                 title: const Text('Из Яндекса (мои плейлисты)'),
@@ -112,8 +117,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
     if (src == 'youtube') {
       await _importYoutube();
+    } else if (src == 'ytlikes') {
+      await _importYoutubeLikes();
     } else if (src == 'yandex') {
       await _importYandex();
+    }
+  }
+
+  Future<void> _importYoutubeLikes() async {
+    _showLoading();
+    try {
+      final tracks =
+          await ref.read(googleYtImportProvider).importLikedVideos();
+      if (mounted) Navigator.pop(context);
+      if (tracks.isEmpty) {
+        _snack('Лайкнутых треков не найдено');
+        return;
+      }
+      await ref
+          .read(libraryProvider)
+          .importPlaylist('YouTube — Мне понравилось', tracks);
+      _snack('Импортировано лайков: ${tracks.length}');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('Ошибка входа/импорта: $e');
     }
   }
 
