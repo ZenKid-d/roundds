@@ -55,6 +55,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 IconButton(
                     icon: const Icon(Icons.add), onPressed: _createPlaylist),
               ],
+              if (_tab == 1)
+                IconButton(
+                  icon: const Icon(Icons.download),
+                  tooltip: 'Скачать все лайки',
+                  onPressed: () {
+                    final liked = ref.read(libraryProvider).liked;
+                    if (liked.isNotEmpty &&
+                        !ref.read(downloadsProvider).playlistBusy) {
+                      ref
+                          .read(downloadsProvider)
+                          .downloadPlaylist('Избранное', liked);
+                      _snack('Скачивание «Избранное»…');
+                    }
+                  },
+                ),
             ],
           ),
         ),
