@@ -55,7 +55,8 @@ class _VinylDiscState extends State<VinylDisc>
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
-    return AnimatedContainer(
+    return RepaintBoundary(
+      child: AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       width: s,
       height: s,
@@ -95,6 +96,7 @@ class _VinylDiscState extends State<VinylDisc>
             ],
           ),
         ),
+      ),
       ),
     );
   }

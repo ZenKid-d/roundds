@@ -78,6 +78,11 @@ final audioHandlerProvider = Provider<RoundsAudioHandler>(
 final playbackProvider = ChangeNotifierProvider<PlaybackController>(
     (ref) => PlaybackController(ref.read(audioHandlerProvider)));
 
+/// Позиция воспроизведения отдельным стримом — чтобы прогресс тикал, не
+/// перестраивая весь плеер.
+final positionProvider = StreamProvider.autoDispose<Duration>(
+    (ref) => ref.watch(audioHandlerProvider).player.positionStream);
+
 final libraryProvider = ChangeNotifierProvider<LibraryController>(
     (ref) => LibraryController(ref.read(prefsProvider)));
 

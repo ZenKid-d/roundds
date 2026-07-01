@@ -10,10 +10,10 @@ import 'audio_handler.dart';
 class PlaybackController extends ChangeNotifier {
   PlaybackController(this._handler) {
     _handler.onUiChanged = notifyListeners;
-    _subs.add(_handler.player.positionStream.listen((p) {
-      _position = p;
-      notifyListeners();
-    }));
+    // Позицию НЕ уведомляем на каждый тик (иначе весь плеер перестраивается
+    // ~5 раз/сек). Её слушает отдельный positionProvider — обновляется только
+    // прогресс-бар. Здесь лишь держим поле актуальным для чтения.
+    _subs.add(_handler.player.positionStream.listen((p) => _position = p));
     _subs.add(_handler.player.durationStream.listen((d) {
       if (d != null) _duration = d;
       notifyListeners();

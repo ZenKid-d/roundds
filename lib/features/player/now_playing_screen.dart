@@ -83,7 +83,7 @@ class NowPlayingScreen extends ConsumerWidget {
                 ServicePill(track.source),
                 if (pc.error != null) _errorBox(context, ref, track, pc.error!),
                 const SizedBox(height: 14),
-                _progress(context, ref, pc.position, pc.duration),
+                _progress(context, ref, pc.duration),
                 _controls(context, ref, pc.isPlaying, pc.isLoading),
                 const SizedBox(height: 14),
                 _tools(context, ref, track),
@@ -133,36 +133,45 @@ class NowPlayingScreen extends ConsumerWidget {
     );
   }
 
-  Widget _progress(
-      BuildContext context, WidgetRef ref, Duration pos, Duration dur) {
+  Widget _progress(BuildContext context, WidgetRef ref, Duration dur) {
     final max = dur.inMilliseconds.toDouble();
-    final value = pos.inMilliseconds.clamp(0, max).toDouble();
-    return Column(
-      children: [
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackShape: const RoundedRectSliderTrackShape(),
-          ),
-          child: Slider(
-            value: max > 0 ? value : 0,
-            max: max > 0 ? max : 1,
-            onChanged: (v) =>
-                ref.read(playbackProvider).seek(Duration(milliseconds: v.toInt())),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(_fmt(pos),
-                  style: TextStyle(fontSize: 10.5, color: AppColors.white45)),
-              Text(_fmt(dur),
-                  style: TextStyle(fontSize: 10.5, color: AppColors.white45)),
-            ],
-          ),
-        ),
-      ],
+    // Отдельный Consumer на позиции — тикает только он, не весь плеер.
+    return Consumer(
+      builder: (context, ref, _) {
+        final pos = ref.watch(positionProvider).value ?? Duration.zero;
+        final value =
+            pos.inMilliseconds.clamp(0, max <= 0 ? 1 : max).toDouble();
+        return Column(
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackShape: const RoundedRectSliderTrackShape(),
+              ),
+              child: Slider(
+                value: max > 0 ? value : 0,
+                max: max > 0 ? max : 1,
+                onChanged: (v) => ref
+                    .read(playbackProvider)
+                    .seek(Duration(milliseconds: v.toInt())),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_fmt(pos),
+                      style:
+                          TextStyle(fontSize: 10.5, color: AppColors.white45)),
+                  Text(_fmt(dur),
+                      style:
+                          TextStyle(fontSize: 10.5, color: AppColors.white45)),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
