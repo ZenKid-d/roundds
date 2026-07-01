@@ -61,7 +61,8 @@ class GoogleYtImportService {
         }
         pageToken = resp.nextPageToken;
       } while (pageToken != null && out.length < max);
-      return out;
+      // Свежие лайки — вверх плейлиста (API отдаёт их в конце коллекции).
+      return out.reversed.toList();
     } finally {
       client.close();
     }
