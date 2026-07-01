@@ -76,8 +76,11 @@ final settingsProvider =
 final audioHandlerProvider = Provider<RoundsAudioHandler>(
     (ref) => throw UnimplementedError('audioHandler override missing'));
 
-final playbackProvider = ChangeNotifierProvider<PlaybackController>(
-    (ref) => PlaybackController(ref.read(audioHandlerProvider)));
+final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
+  final pc = PlaybackController(ref.read(audioHandlerProvider));
+  pc.onListened = (ms) => ref.read(libraryProvider).addListened(ms);
+  return pc;
+});
 
 /// Позиция воспроизведения отдельным стримом — чтобы прогресс тикал, не
 /// перестраивая весь плеер.

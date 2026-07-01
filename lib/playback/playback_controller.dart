@@ -13,19 +13,43 @@ class PlaybackController extends ChangeNotifier {
     // Позицию НЕ уведомляем на каждый тик (иначе весь плеер перестраивается
     // ~5 раз/сек). Её слушает отдельный positionProvider — обновляется только
     // прогресс-бар. Здесь лишь держим поле актуальным для чтения.
-    _subs.add(_handler.player.positionStream.listen((p) => _position = p));
+    _subs.add(_handler.player.positionStream.listen((p) {
+      _position = p;
+      // Периодический сброс наслушанного (чтобы длинные сессии сохранялись).
+      if (_playing && _listenSw.elapsedMilliseconds >= 20000) {
+        _flushListened();
+        _listenSw.start();
+      }
+    }));
     _subs.add(_handler.player.durationStream.listen((d) {
       if (d != null) _duration = d;
       notifyListeners();
     }));
     _subs.add(_handler.player.playerStateStream.listen((s) {
       _playing = s.playing;
+      if (s.playing) {
+        if (!_listenSw.isRunning) _listenSw.start();
+      } else {
+        _flushListened();
+      }
       notifyListeners();
     }));
   }
 
   final RoundsAudioHandler _handler;
   final List<StreamSubscription<dynamic>> _subs = [];
+  final Stopwatch _listenSw = Stopwatch();
+
+  /// Колбэк учёта наслушанного времени (в мс). Ставится из провайдера.
+  void Function(int ms)? onListened;
+
+  void _flushListened() {
+    final ms = _listenSw.elapsedMilliseconds;
+    _listenSw
+      ..stop()
+      ..reset();
+    if (ms > 0) onListened?.call(ms);
+  }
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -75,6 +99,7 @@ class PlaybackController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _flushListened();
     for (final s in _subs) {
       s.cancel();
     }

@@ -20,6 +20,7 @@ class LibraryController extends ChangeNotifier {
   final List<Track> _liked = [];
   final Map<String, Track> _statTrack = {};
   final Map<String, int> _statCount = {};
+  int _totalListenedMs = 0;
 
   List<Track> get history => List.unmodifiable(_history);
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
@@ -56,6 +57,30 @@ class LibraryController extends ChangeNotifier {
         _statCount[t.uid] = m['count'] as int;
       }
     }
+    // Суммарное время прослушивания. Если ещё не считалось — разовая оценка
+    // из истории (кол-во прослушиваний × длительность трека).
+    _totalListenedMs = _prefs.getInt('listened_ms') ?? -1;
+    if (_totalListenedMs < 0) {
+      var est = 0;
+      for (final t in _statTrack.values) {
+        final d = t.duration;
+        if (d != null) est += d.inMilliseconds * (_statCount[t.uid] ?? 0);
+      }
+      _totalListenedMs = est;
+      _prefs.setInt('listened_ms', _totalListenedMs);
+    }
+    notifyListeners();
+  }
+
+  Duration get totalListened => Duration(milliseconds: _totalListenedMs);
+  int get uniqueTracks => _statTrack.length;
+  int get uniqueArtists =>
+      _statTrack.values.map((t) => t.artist).toSet().length;
+
+  Future<void> addListened(int ms) async {
+    if (ms <= 0) return;
+    _totalListenedMs += ms;
+    await _prefs.setInt('listened_ms', _totalListenedMs);
     notifyListeners();
   }
 

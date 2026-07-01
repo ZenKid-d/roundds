@@ -39,6 +39,9 @@ class GoogleYtImportService {
           final sn = v.snippet;
           final id = v.id;
           if (sn == null || id == null) continue;
+          // Только музыка: категория YouTube «Music» = 10 (отсекает влоги,
+          // смешные видео и прочее не-музыкальное из лайков).
+          if (sn.categoryId != '10') continue;
           var artist = sn.channelTitle ?? 'YouTube';
           const topic = ' - Topic';
           if (artist.endsWith(topic)) {
