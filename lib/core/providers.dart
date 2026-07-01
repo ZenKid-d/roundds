@@ -36,8 +36,8 @@ Dio buildAppDio() => Dio(BaseOptions(
 
 final dioProvider = Provider<Dio>((ref) => buildAppDio());
 
-final youtubeSourceProvider =
-    Provider<YoutubeMusicSource>((ref) => YoutubeMusicSource());
+final youtubeSourceProvider = Provider<YoutubeMusicSource>(
+    (ref) => YoutubeMusicSource(ref.read(dioProvider)));
 
 final soundcloudSourceProvider = Provider<SoundcloudSource>((ref) {
   final prefs = ref.read(prefsProvider);

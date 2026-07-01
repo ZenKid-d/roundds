@@ -22,7 +22,7 @@ Future<void> main() async {
   // Общие экземпляры — их же отдаём в Riverpod через overrides,
   // чтобы UI и аудио-хендлер работали с одними источниками.
   final dio = buildAppDio();
-  final youtube = YoutubeMusicSource();
+  final youtube = YoutubeMusicSource(dio);
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);
