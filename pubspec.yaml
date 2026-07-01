@@ -29,6 +29,7 @@ dependencies:
   # Networking / parsing
   dio: ^5.5.0+1
   crypto: ^3.0.3
+  html: ^0.15.4
 
   # Images
   cached_network_image: ^3.3.1

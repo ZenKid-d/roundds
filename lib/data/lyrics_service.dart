@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:html/parser.dart' as html_parser;
 
 /// Текст песни: обычный и/или синхронизированный (LRC).
 class Lyrics {
@@ -34,6 +35,9 @@ class LyricsService {
 
     final ovh = await _lyricsOvh(artist, title);
     if (ovh != null && !ovh.isEmpty) return ovh;
+
+    final genius = await _genius(artist, title);
+    if (genius != null && !genius.isEmpty) return genius;
 
     return null;
   }
@@ -94,6 +98,48 @@ class LyricsService {
       // Есть таймкоды → синхронный, иначе обычный.
       final synced = RegExp(r'\[\d{1,2}:\d{2}').hasMatch(lrc);
       return synced ? Lyrics(synced: lrc) : Lyrics(plain: lrc);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // --- Genius (обычный текст; API не отдаёт текст, поэтому разбор страницы) ---
+  Future<Lyrics?> _genius(String artist, String title) async {
+    final opts = Options(headers: const {
+      'Referer': 'https://genius.com/',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+              '(KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+    });
+    try {
+      final s = await _dio.get('https://genius.com/api/search/multi',
+          queryParameters: {'q': '$artist $title'}, options: opts);
+      final sections = (s.data['response']?['sections'] as List?) ?? [];
+      String? url;
+      for (final sec in sections) {
+        if ((sec as Map)['type'] == 'song') {
+          final hits = (sec['hits'] as List?) ?? [];
+          if (hits.isNotEmpty) {
+            url = (hits.first as Map)['result']?['url'] as String?;
+            break;
+          }
+        }
+      }
+      if (url == null) return null;
+
+      final page = await _dio.get<String>(url,
+          options: Options(responseType: ResponseType.plain, headers: {
+            'User-Agent': opts.headers!['User-Agent'],
+          }));
+      var body = page.data ?? '';
+      // Переносы строк Genius держит в <br> — сохраняем их до разбора.
+      body = body.replaceAll(RegExp(r'<br\s*/?>'), '\n');
+      final doc = html_parser.parse(body);
+      final containers =
+          doc.querySelectorAll('[data-lyrics-container="true"]');
+      final text = containers.map((e) => e.text).join('\n').trim();
+      if (text.isEmpty) return null;
+      return Lyrics(plain: text);
     } catch (_) {
       return null;
     }
