@@ -23,17 +23,17 @@ class MiniPlayer extends ConsumerWidget {
       onTap: () => context.push('/player'),
       child: Container(
         margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 74,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: AppColors.surface2.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.white06),
         ),
         child: Row(
           children: [
-            Artwork(track.artworkUrl, size: 44, seed: track.uid, radius: 12),
-            const SizedBox(width: 10),
+            Artwork(track.artworkUrl, size: 54, seed: track.uid, radius: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -43,12 +43,13 @@ class MiniPlayer extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w500)),
+                          fontSize: 13.5, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
                   Text(track.artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style:
-                          TextStyle(fontSize: 10.5, color: AppColors.white45)),
+                          TextStyle(fontSize: 11.5, color: AppColors.white45)),
                 ],
               ),
             ),
@@ -80,10 +81,10 @@ class _RoundIcon extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 36,
-        height: 36,
+        width: 42,
+        height: 42,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        child: Icon(icon, size: 20, color: Colors.black),
+        child: Icon(icon, size: 23, color: Colors.black),
       ),
     );
   }

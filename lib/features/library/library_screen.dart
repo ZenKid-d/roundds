@@ -6,6 +6,7 @@ import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/artwork.dart';
+import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../domain/models/playlist.dart';
 
@@ -401,6 +402,7 @@ class PlaylistScreen extends ConsumerWidget {
             orElse: () => PlaylistX(id: playlistId, name: 'Плейлист'));
     return Scaffold(
       appBar: AppBar(title: Text(pl.name)),
+      bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: pl.tracks.isEmpty
           ? Center(
               child: Text('Плейлист пуст',
