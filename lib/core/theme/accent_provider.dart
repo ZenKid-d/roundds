@@ -27,7 +27,9 @@ final effectiveAccentProvider = Provider<Color>((ref) {
   }
 });
 
-/// Динамический акцент: доминирующий/яркий цвет обложки.
+/// Динамический акцент: первый достаточно насыщенный цвет обложки.
+/// Если обложка серая/чёрно-белая (нет цветного оттенка) — оставляем акцент
+/// по умолчанию, чтобы не красить серый в случайный цвет.
 final accentProvider = FutureProvider<Color>((ref) async {
   final url = ref.watch(currentArtworkProvider);
   if (url == null || url.isEmpty) return AppColors.defaultAccent;
@@ -35,22 +37,34 @@ final accentProvider = FutureProvider<Color>((ref) async {
     final palette = await PaletteGenerator.fromImageProvider(
       CachedNetworkImageProvider(url),
       size: const Size(120, 120),
-      maximumColorCount: 12,
+      maximumColorCount: 16,
     );
-    final c = palette.vibrantColor?.color ??
-        palette.lightVibrantColor?.color ??
-        palette.dominantColor?.color;
-    return c == null ? AppColors.defaultAccent : _ensureVivid(c);
+
+    // Кандидаты по приоритету: яркие → доминирующий → все свотчи.
+    final candidates = <Color>[
+      if (palette.vibrantColor != null) palette.vibrantColor!.color,
+      if (palette.lightVibrantColor != null) palette.lightVibrantColor!.color,
+      if (palette.darkVibrantColor != null) palette.darkVibrantColor!.color,
+      if (palette.dominantColor != null) palette.dominantColor!.color,
+      ...palette.paletteColors.map((p) => p.color),
+    ];
+
+    // Берём первый с реальным оттенком (насыщенность выше порога).
+    for (final c in candidates) {
+      if (HSLColor.fromColor(c).saturation >= 0.22) return _ensureVivid(c);
+    }
+    // Обложка без цвета — не выдумываем оттенок.
+    return AppColors.defaultAccent;
   } catch (_) {
     return AppColors.defaultAccent;
   }
 });
 
-/// Поднимает насыщенность/яркость, чтобы акцент читался на чёрном.
+/// Поднимает насыщенность/яркость уже цветного акцента, чтобы читался на чёрном.
 Color _ensureVivid(Color c) {
   final hsl = HSLColor.fromColor(c);
   return hsl
-      .withSaturation((hsl.saturation + 0.2).clamp(0.45, 1.0))
+      .withSaturation((hsl.saturation + 0.15).clamp(0.5, 1.0))
       .withLightness(hsl.lightness.clamp(0.55, 0.75))
       .toColor();
 }
