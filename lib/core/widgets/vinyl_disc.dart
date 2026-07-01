@@ -76,35 +76,34 @@ class _VinylDiscState extends State<VinylDisc>
           painter: _GroovePainter(),
           child: Center(
             child: Container(
-              width: s * 0.6,
-              height: s * 0.6,
-              clipBehavior: Clip.antiAlias,
+              width: s * 0.7,
+              height: s * 0.7,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.black,
                 boxShadow: [
-                  BoxShadow(color: Colors.black, blurRadius: 0, spreadRadius: 3),
+                  BoxShadow(color: Colors.black, blurRadius: 0, spreadRadius: 4),
                 ],
               ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // size задаём явно + BoxFit.cover — обложка заполняет круг
-                  // целиком, без серых/чёрных полей внутри пластинки.
-                  Artwork(widget.artworkUrl,
-                      size: s * 0.6, radius: 999, seed: widget.seed),
-                  Center(
-                    child: Container(
-                      width: s * 0.05,
-                      height: s * 0.05,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black,
-                        border: Border.all(color: Colors.white24, width: 2),
+              child: ClipOval(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Artwork(widget.artworkUrl,
+                        radius: 999, seed: widget.seed),
+                    Center(
+                      child: Container(
+                        width: s * 0.06,
+                        height: s * 0.06,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black,
+                          border: Border.all(
+                              color: Colors.white24, width: 2),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
