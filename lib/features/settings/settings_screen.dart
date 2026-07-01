@@ -1,5 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -51,6 +57,43 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         const _SoundcloudClientId(),
         const SizedBox(height: 16),
+        const _Header('Аудио'),
+        Consumer(builder: (context, ref, _) {
+          final cf = ref.watch(playbackProvider).crossfade;
+          return SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: cf,
+            title: const Text('Плавные переходы (кроссфейд)'),
+            subtitle: Text('Затухание в конце и появление в начале трека',
+                style: TextStyle(color: AppColors.white45, fontSize: 11)),
+            onChanged: (v) {
+              ref.read(playbackProvider).setCrossfade(v);
+              ref.read(prefsProvider).setBool('crossfade', v);
+            },
+          );
+        }),
+        const SizedBox(height: 16),
+        const _Header('Резервная копия'),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _exportBackup(context, ref),
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Экспорт'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _importBackup(context, ref),
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Импорт'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.bar_chart),
@@ -71,6 +114,44 @@ class SettingsScreen extends ConsumerWidget {
           'Играет внутри. Go+ — по токену твоей подписки.',
         SourceType.yandex => 'Играет внутри. Нужен токен аккаунта (риск бана).',
       };
+}
+
+Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
+  try {
+    final data = ref.read(libraryProvider).exportData();
+    final json = const JsonEncoder.withIndent('  ').convert(data);
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/roundds_backup.json');
+    await file.writeAsString(json);
+    await Share.shareXFiles([XFile(file.path)],
+        text: 'Roundds — резервная копия библиотеки');
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка экспорта: $e')));
+    }
+  }
+}
+
+Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
+  final res = await FilePicker.platform
+      .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+  final path = res?.files.single.path;
+  if (path == null) return;
+  try {
+    final content = await File(path).readAsString();
+    final data = jsonDecode(content) as Map<String, dynamic>;
+    await ref.read(libraryProvider).importData(data);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Библиотека импортирована')));
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка импорта: $e')));
+    }
+  }
 }
 
 class _RiskBanner extends StatelessWidget {

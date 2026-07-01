@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
 import '../domain/models/track.dart';
+import 'notifications.dart';
 
 /// Скачивание треков для оффлайн-прослушивания. Файлы — в папке документов,
 /// метаданные — в SharedPreferences.
@@ -19,14 +20,26 @@ class DownloadsController extends ChangeNotifier {
   final SharedPreferences _prefs;
   final Dio _dio;
   final Aggregator _aggregator;
+  final NotificationService _notif = NotificationService();
 
   final Map<String, Track> _tracks = {};
   final Map<String, String> _paths = {};
   final Set<String> _inProgress = {};
+  final Map<String, double> _progress = {};
+  final Map<String, Track> _downloading = {};
+
+  double _playlistProgress = 0;
+  String? _playlistName;
+  bool _playlistBusy = false;
 
   List<Track> get downloads => _tracks.values.toList();
+  List<Track> get inProgress => _downloading.values.toList();
   bool isDownloaded(String uid) => _paths.containsKey(uid);
   bool isDownloading(String uid) => _inProgress.contains(uid);
+  double progressFor(String uid) => _progress[uid] ?? 0;
+  double get playlistProgress => _playlistProgress;
+  String? get playlistName => _playlistName;
+  bool get playlistBusy => _playlistBusy;
 
   /// Синхронный резолвер локального файла для плеера.
   String? localPathFor(String uid) {
@@ -55,9 +68,11 @@ class DownloadsController extends ChangeNotifier {
             .toList()),
       );
 
-  Future<void> download(Track track) async {
+  Future<void> download(Track track, {bool notify = true}) async {
     if (isDownloaded(track.uid) || isDownloading(track.uid)) return;
     _inProgress.add(track.uid);
+    _downloading[track.uid] = track;
+    _progress[track.uid] = 0;
     notifyListeners();
     try {
       final stream = await _aggregator.resolveStreamWithFallback(track);
@@ -70,16 +85,51 @@ class DownloadsController extends ChangeNotifier {
         stream.uri.toString(),
         path,
         options: Options(headers: stream.headers),
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            _progress[track.uid] = received / total;
+            notifyListeners();
+          }
+        },
       );
       _tracks[track.uid] = track;
       _paths[track.uid] = path;
       await _persist();
+      if (notify) {
+        await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
+      }
     } catch (_) {
       // ошибку проглатываем — в UI трек просто не отметится скачанным
     } finally {
       _inProgress.remove(track.uid);
+      _downloading.remove(track.uid);
+      _progress.remove(track.uid);
       notifyListeners();
     }
+  }
+
+  /// Скачать весь плейлист. Уведомление — одно, в конце (не на каждый трек).
+  Future<void> downloadPlaylist(String name, List<Track> tracks) async {
+    if (_playlistBusy || tracks.isEmpty) return;
+    _playlistBusy = true;
+    _playlistName = name;
+    _playlistProgress = 0;
+    notifyListeners();
+    var done = 0;
+    for (final t in tracks) {
+      if (!isDownloaded(t.uid)) {
+        await download(t, notify: false);
+      }
+      done++;
+      _playlistProgress = done / tracks.length;
+      notifyListeners();
+    }
+    _playlistBusy = false;
+    _playlistName = null;
+    _playlistProgress = 0;
+    notifyListeners();
+    await _notif.show('Плейлист скачан', '$name · ${tracks.length} треков',
+        id: 1);
   }
 
   Future<void> remove(String uid) async {

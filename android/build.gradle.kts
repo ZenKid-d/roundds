@@ -15,6 +15,17 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+// Плагины по умолчанию компилируются под android-34; форсим 36.
+// afterEvaluate регистрируем ДО evaluationDependsOn, иначе проект уже вычислен.
+subprojects {
+    afterEvaluate {
+        val android = extensions.findByName("android")
+                as? com.android.build.gradle.BaseExtension
+        if (android != null && android.compileSdkVersion != "android-36") {
+            android.compileSdkVersion(36)
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }

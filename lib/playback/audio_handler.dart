@@ -45,6 +45,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
   bool radioMode = false;
   Future<List<Track>> Function(Track seed)? radioExtender;
 
+  // Кроссфейд-лайт: плавное затухание в конце и появление в начале трека.
+  bool _crossfade = false;
+  Timer? _fadeTimer;
+  static const int _fadeMs = 700;
+
   // Предзагрузка следующего трека.
   String? _preUid;
   PlayableStream? _preStream;
@@ -69,6 +74,42 @@ class RoundsAudioHandler extends BaseAudioHandler {
   void cycleRepeat() {
     _repeat = LoopMode.values[(_repeat.index + 1) % LoopMode.values.length];
     _notify();
+  }
+
+  double get speed => _player.speed;
+  @override
+  Future<void> setSpeed(double speed) async {
+    await _player.setSpeed(speed);
+    _notify();
+  }
+
+  bool get crossfade => _crossfade;
+  void setCrossfade(bool on) {
+    _crossfade = on;
+    _fadeTimer?.cancel();
+    if (on) {
+      _fadeTimer = Timer.periodic(
+          const Duration(milliseconds: 120), (_) => _fadeTick());
+    } else {
+      _fadeTimer = null;
+      _player.setVolume(1);
+    }
+    _notify();
+  }
+
+  void _fadeTick() {
+    final posMs = _player.position.inMilliseconds;
+    final durMs = _player.duration?.inMilliseconds ?? 0;
+    var v = 1.0;
+    if (posMs < _fadeMs) v = (posMs / _fadeMs).clamp(0.0, 1.0);
+    if (durMs > 0) {
+      final rem = durMs - posMs;
+      if (rem < _fadeMs) {
+        final vo = (rem / _fadeMs).clamp(0.0, 1.0);
+        if (vo < v) v = vo;
+      }
+    }
+    _player.setVolume(v);
   }
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {

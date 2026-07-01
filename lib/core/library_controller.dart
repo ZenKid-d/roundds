@@ -91,6 +91,15 @@ class LibraryController extends ChangeNotifier {
 
   bool isLiked(Track t) => _liked.any((e) => e.uid == t.uid);
 
+  Future<void> addManyToLiked(List<Track> tracks) async {
+    for (final t in tracks) {
+      if (!_liked.any((x) => x.uid == t.uid)) _liked.insert(0, t);
+    }
+    await _prefs.setString(
+        'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));
+    notifyListeners();
+  }
+
   Future<void> toggleLike(Track t) async {
     if (isLiked(t)) {
       _liked.removeWhere((e) => e.uid == t.uid);
@@ -162,6 +171,41 @@ class LibraryController extends ChangeNotifier {
     final pl = _playlists.firstWhere((e) => e.id == id);
     pl.tracks.removeWhere((e) => e.uid == t.uid);
     await _persistPlaylists();
+    notifyListeners();
+  }
+
+  /// Полный экспорт библиотеки (плейлисты, лайки, история, статистика).
+  Map<String, dynamic> exportData() => {
+        'version': 1,
+        'playlists': _playlists.map((e) => e.toJson()).toList(),
+        'liked': _liked.map((e) => e.toJson()).toList(),
+        'history': _history.map((e) => e.toJson()).toList(),
+        'stats': _statTrack.values
+            .map((t) => {'track': t.toJson(), 'count': _statCount[t.uid]})
+            .toList(),
+      };
+
+  /// Импорт (слияние) библиотеки из бэкапа.
+  Future<void> importData(Map<String, dynamic> data) async {
+    for (final e in (data['playlists'] as List? ?? [])) {
+      final pl = PlaylistX.fromJson((e as Map).cast<String, dynamic>());
+      if (!_playlists.any((p) => p.id == pl.id)) _playlists.add(pl);
+    }
+    for (final e in (data['liked'] as List? ?? [])) {
+      final t = Track.fromJson((e as Map).cast<String, dynamic>());
+      if (!_liked.any((x) => x.uid == t.uid)) _liked.insert(0, t);
+    }
+    for (final e in (data['stats'] as List? ?? [])) {
+      final m = (e as Map).cast<String, dynamic>();
+      final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
+      final c = (m['count'] as num?)?.toInt() ?? 0;
+      _statTrack[t.uid] = t;
+      _statCount[t.uid] = (_statCount[t.uid] ?? 0) + c;
+    }
+    await _persistPlaylists();
+    await _prefs.setString(
+        'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));
+    await _persistStats();
     notifyListeners();
   }
 

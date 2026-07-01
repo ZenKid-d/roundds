@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_settings.dart';
+import '../../core/widgets/animated_bg.dart';
 import '../../core/widgets/artwork.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
@@ -13,6 +14,7 @@ import '../../domain/models/track.dart';
 import '../../playback/audio_handler.dart';
 import '../artist/artist_screen.dart';
 import 'equalizer_screen.dart';
+import 'karaoke_screen.dart';
 import 'lyrics_screen.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
@@ -33,16 +35,12 @@ class NowPlayingScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.7),
-            radius: 1.1,
-            colors: [accent.withValues(alpha: 0.28), Colors.black],
-            stops: const [0, 0.7],
-          ),
-        ),
-        child: SafeArea(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedPlayerBg(
+              accent: accent, animate: ts.animLevel != AnimLevel.min),
+          SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
             child: Column(
@@ -91,7 +89,8 @@ class NowPlayingScreen extends ConsumerWidget {
               ],
             ),
           ),
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -253,7 +252,11 @@ class NowPlayingScreen extends ConsumerWidget {
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: accent))
+                        value: downloads.progressFor(track.uid) == 0
+                            ? null
+                            : downloads.progressFor(track.uid),
+                        strokeWidth: 2,
+                        color: accent))
                 : Icon(
                     downloaded
                         ? Icons.download_done
@@ -401,6 +404,23 @@ class NowPlayingScreen extends ConsumerWidget {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.mic_external_on),
+              title: const Text('Караоке'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => KaraokeScreen(track: track)));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.speed),
+              title: const Text('Скорость воспроизведения'),
+              onTap: () {
+                Navigator.pop(context);
+                _speedSheet(context, ref);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.equalizer),
               title: const Text('Эквалайзер'),
               onTap: () {
@@ -459,6 +479,40 @@ class NowPlayingScreen extends ConsumerWidget {
                       );
                   Navigator.pop(context);
                   _todo(context, 'Таймер сна: ${e.key}');
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _speedSheet(BuildContext context, WidgetRef ref) {
+    const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+    final current = ref.read(playbackProvider).speed;
+    final accent = Theme.of(context).colorScheme.primary;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface1,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Скорость',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ),
+            for (final s in speeds)
+              ListTile(
+                title: Text('${s}x'),
+                trailing: (s - current).abs() < 0.01
+                    ? Icon(Icons.check, color: accent)
+                    : null,
+                onTap: () {
+                  ref.read(playbackProvider).setSpeed(s);
+                  Navigator.pop(context);
                 },
               ),
           ],

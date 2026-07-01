@@ -9,6 +9,8 @@ import '../../core/widgets/artwork.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../domain/models/playlist.dart';
+import '../../domain/models/track.dart';
+import '../common/track_list_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -127,21 +129,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _importYoutubeLikes() async {
     _showLoading();
+    List<Track> tracks;
     try {
-      final tracks =
-          await ref.read(googleYtImportProvider).importLikedVideos();
+      tracks = await ref.read(googleYtImportProvider).importLikedVideos();
       if (mounted) Navigator.pop(context);
-      if (tracks.isEmpty) {
-        _snack('Лайкнутых треков не найдено');
-        return;
-      }
-      await ref
-          .read(libraryProvider)
-          .importPlaylist('YouTube — Мне понравилось', tracks);
-      _snack('Импортировано лайков: ${tracks.length}');
     } catch (e) {
       if (mounted) Navigator.pop(context);
       _snack('Ошибка входа/импорта: $e');
+      return;
+    }
+    if (tracks.isEmpty) {
+      _snack('Лайкнутых треков не найдено');
+      return;
+    }
+    if (!mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface2,
+        title: const Text('Куда добавить лайки?'),
+        content: Text('Найдено треков: ${tracks.length}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, 'playlist'),
+              child: const Text('Отдельным плейлистом')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, 'liked'),
+              child: const Text('В «Избранное»')),
+        ],
+      ),
+    );
+    if (choice == 'playlist') {
+      await ref
+          .read(libraryProvider)
+          .importPlaylist('YouTube — Мне понравилось', tracks);
+      _snack('Импортировано плейлистом: ${tracks.length}');
+    } else if (choice == 'liked') {
+      await ref.read(libraryProvider).addManyToLiked(tracks);
+      _snack('Добавлено в Избранное: ${tracks.length}');
     }
   }
 
@@ -242,23 +267,69 @@ class _DownloadsView extends ConsumerWidget {
   const _DownloadsView();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dl = ref.watch(downloadsProvider).downloads;
-    if (dl.isEmpty) {
+    final ctl = ref.watch(downloadsProvider);
+    final dl = ctl.downloads;
+    final busy = ctl.inProgress;
+    final accent = Theme.of(context).colorScheme.primary;
+
+    if (dl.isEmpty && busy.isEmpty && !ctl.playlistBusy) {
       return Center(
         child: Text('Нет скачанных треков',
             style: TextStyle(color: AppColors.white45)),
       );
     }
-    return ListView.builder(
-      itemCount: dl.length,
-      itemBuilder: (_, i) => TrackRow(
-        track: dl[i],
-        onTap: () => playTrack(ref, context, dl[i], queue: dl),
-        trailing: IconButton(
-          icon: Icon(Icons.delete_outline, color: AppColors.white60),
-          onPressed: () => ref.read(downloadsProvider).remove(dl[i].uid),
-        ),
-      ),
+    return ListView(
+      children: [
+        if (ctl.playlistBusy)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    'Скачивается плейлист: ${ctl.playlistName} · '
+                    '${(ctl.playlistProgress * 100).round()}%',
+                    style:
+                        TextStyle(fontSize: 12.5, color: AppColors.white60)),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                      value: ctl.playlistProgress, color: accent),
+                ),
+              ],
+            ),
+          ),
+        for (final t in busy)
+          ListTile(
+            leading: SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                  value: ctl.progressFor(t.uid) == 0
+                      ? null
+                      : ctl.progressFor(t.uid),
+                  strokeWidth: 2,
+                  color: accent),
+            ),
+            title: Text(t.title,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+                '${t.artist} · ${(ctl.progressFor(t.uid) * 100).round()}%',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: AppColors.white45, fontSize: 12)),
+          ),
+        for (final t in dl)
+          TrackRow(
+            track: t,
+            onTap: () => playTrack(ref, context, t, queue: dl),
+            trailing: IconButton(
+              icon: Icon(Icons.delete_outline, color: AppColors.white60),
+              onPressed: () => ref.read(downloadsProvider).remove(t.uid),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -321,36 +392,60 @@ class _Toggle extends StatelessWidget {
 class _PlaylistsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playlists = ref.watch(libraryProvider).playlists;
-    if (playlists.isEmpty) {
-      return Center(
-        child: Text('Нет плейлистов.\nНажмите + чтобы создать.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.white45)),
-      );
-    }
-    return ListView.builder(
-      itemCount: playlists.length,
-      itemBuilder: (_, i) {
-        final pl = playlists[i];
-        return ListTile(
-          leading: SizedBox(
-            width: 52,
-            height: 52,
-            child: Artwork(pl.cover?.artworkUrl, seed: pl.id, radius: 12),
+    final lib = ref.watch(libraryProvider);
+    final playlists = lib.playlists;
+    final smart = <(String, IconData, List<Track>)>[
+      ('Часто слушаю', Icons.local_fire_department,
+          lib.topTracks(limit: 50).map((e) => e.key).toList()),
+      ('Недавнее', Icons.history, lib.history),
+      ('Только лайки', Icons.favorite, lib.liked),
+    ];
+    final accent = Theme.of(context).colorScheme.primary;
+
+    return ListView(
+      children: [
+        for (final s in smart)
+          if (s.$3.isNotEmpty)
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor: accent.withValues(alpha: 0.18),
+                child: Icon(s.$2, color: accent, size: 20),
+              ),
+              title: Text(s.$1,
+                  style: const TextStyle(fontWeight: FontWeight.w500)),
+              subtitle: Text('${s.$3.length} треков · авто',
+                  style: TextStyle(color: AppColors.white45, fontSize: 12)),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => TrackListScreen(title: s.$1, tracks: s.$3),
+              )),
+            ),
+        const Divider(height: 8),
+        if (playlists.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text('Своих плейлистов пока нет. Нажмите + или импортируйте.',
+                style: TextStyle(color: AppColors.white45)),
           ),
-          title: Text(pl.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-          subtitle: Text('${pl.tracks.length} треков',
-              style: TextStyle(color: AppColors.white45, fontSize: 12)),
-          trailing: IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () => _playlistMenu(context, ref, pl),
+        for (final pl in playlists)
+          ListTile(
+            leading: SizedBox(
+              width: 52,
+              height: 52,
+              child: Artwork(pl.cover?.artworkUrl, seed: pl.id, radius: 12),
+            ),
+            title: Text(pl.name,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: Text('${pl.tracks.length} треков',
+                style: TextStyle(color: AppColors.white45, fontSize: 12)),
+            trailing: IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () => _playlistMenu(context, ref, pl),
+            ),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => PlaylistScreen(playlistId: pl.id),
+            )),
           ),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => PlaylistScreen(playlistId: pl.id),
-          )),
-        );
-      },
+      ],
     );
   }
 
@@ -400,8 +495,29 @@ class PlaylistScreen extends ConsumerWidget {
         .playlists
         .firstWhere((e) => e.id == playlistId,
             orElse: () => PlaylistX(id: playlistId, name: 'Плейлист'));
+    final downloads = ref.watch(downloadsProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(pl.name)),
+      appBar: AppBar(
+        title: Text(pl.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            tooltip: 'Скачать плейлист',
+            onPressed: (pl.tracks.isEmpty || downloads.playlistBusy)
+                ? null
+                : () => ref
+                    .read(downloadsProvider)
+                    .downloadPlaylist(pl.name, pl.tracks),
+          ),
+        ],
+        bottom: downloads.playlistBusy
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(3),
+                child: LinearProgressIndicator(
+                    value: downloads.playlistProgress),
+              )
+            : null,
+      ),
       bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: pl.tracks.isEmpty
           ? Center(

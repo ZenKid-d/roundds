@@ -48,6 +48,8 @@ Future<void> main() async {
   handler.localFileResolver = downloads.localPathFor;
   // Радио: докрутка очереди похожими треками.
   handler.radioExtender = reco.similarTo;
+  // Кроссфейд — из сохранённой настройки.
+  if (prefs.getBool('crossfade') ?? false) handler.setCrossfade(true);
 
   runApp(
     ProviderScope(

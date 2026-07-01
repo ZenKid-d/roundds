@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
 import '../../data/recommendation_service.dart';
 import '../../domain/models/track.dart';
+import '../charts/charts_screen.dart';
 
 /// Лента главного экрана — микс из всех включённых источников.
 final feedProvider = FutureProvider<List<Track>>((ref) async {
@@ -54,6 +55,20 @@ class HomeScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _RadioCard(onTap: () => _startTasteRadio(ref, context)),
             ),
+          SliverToBoxAdapter(
+            child: _GenreChips(
+                onGenre: (g) => _startGenreRadio(ref, context, g)),
+          ),
+          SliverToBoxAdapter(
+            child: ListTile(
+              leading:
+                  Icon(Icons.trending_up, color: AppColors.white60),
+              title: const Text('Новинки и чарты'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ChartsScreen())),
+            ),
+          ),
           if (history.isNotEmpty) ...[
             const _SectionHeader('Продолжить слушать'),
             SliverToBoxAdapter(child: _trackHRow(ref, context, history)),
@@ -117,6 +132,60 @@ Widget _trackHRow(WidgetRef ref, BuildContext context, List<Track> tracks) {
       ),
     ),
   );
+}
+
+Future<void> _startGenreRadio(
+    WidgetRef ref, BuildContext context, String genre) async {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Радио: $genre'), duration: const Duration(seconds: 1)));
+  final results = await ref.read(aggregatorProvider).search(genre, perSource: 15);
+  if (results.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Ничего не найдено')));
+    }
+    return;
+  }
+  await ref.read(playbackProvider).startRadio(results.first, results);
+  ref.read(libraryProvider).pushHistory(results.first);
+  if (context.mounted) context.push('/player');
+}
+
+class _GenreChips extends StatelessWidget {
+  const _GenreChips({required this.onGenre});
+  final void Function(String genre) onGenre;
+
+  static const _genres = [
+    'Поп', 'Рок', 'Хип-хоп', 'Электроника', 'Инди', 'Джаз', 'Классика', 'Метал',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        itemCount: _genres.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => onGenre(_genres[i]),
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: accent.withValues(alpha: 0.4)),
+            ),
+            child: Text(_genres[i],
+                style: const TextStyle(fontSize: 12.5, color: Colors.white)),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> _startTasteRadio(WidgetRef ref, BuildContext context) async {

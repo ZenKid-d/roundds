@@ -44,6 +44,11 @@ class PlaybackController extends ChangeNotifier {
   void toggleShuffle() => _handler.toggleShuffle();
   void cycleRepeat() => _handler.cycleRepeat();
 
+  double get speed => _handler.speed;
+  Future<void> setSpeed(double s) => _handler.setSpeed(s);
+  bool get crossfade => _handler.crossfade;
+  void setCrossfade(bool on) => _handler.setCrossfade(on);
+
   Future<void> playTrack(Track track, {List<Track>? queue}) =>
       _handler.playTrack(track, queue: queue);
 

@@ -49,6 +49,13 @@ dependencies:
   shared_preferences: ^2.2.3
   path_provider: ^2.1.4
 
+  # Бэкап/экспорт библиотеки
+  file_picker: ^8.1.2
+  share_plus: ^10.1.2
+
+  # Уведомления о завершении скачивания
+  flutter_local_notifications: ^18.0.1
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
