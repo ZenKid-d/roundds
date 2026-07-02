@@ -1,6 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
@@ -188,6 +194,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     color: Color(0xFFFFCC00), size: 20),
                 title: const Text('Из Яндекса (мои плейлисты)'),
                 onTap: () => Navigator.pop(context, 'yandex')),
+            ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: const Text('Из файла (.json)'),
+                onTap: () => Navigator.pop(context, 'file')),
           ],
         ),
       ),
@@ -198,6 +208,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await _importYoutubeLikes();
     } else if (src == 'yandex') {
       await _importYandex();
+    } else if (src == 'file') {
+      await _importPlaylistFile();
+    }
+  }
+
+  Future<void> _importPlaylistFile() async {
+    final res = await FilePicker.platform
+        .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+    final path = res?.files.single.path;
+    if (path == null) return;
+    try {
+      final data = jsonDecode(await File(path).readAsString());
+      final map = (data as Map).cast<String, dynamic>();
+      final name = (map['name'] as String?) ?? 'Импортированный плейлист';
+      final tracks = ((map['tracks'] as List?) ?? [])
+          .map((e) => Track.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+      if (tracks.isEmpty) {
+        _snack('Файл пуст или неверного формата');
+        return;
+      }
+      await ref.read(libraryProvider).importPlaylist(name, tracks);
+      _snack('Импортировано: $name (${tracks.length} треков)');
+    } catch (e) {
+      _snack('Ошибка импорта файла: $e');
     }
   }
 
@@ -478,6 +513,24 @@ int _plCreatedAt(String id) {
   return m != null ? (int.tryParse(m.group(1)!) ?? 0) : 0;
 }
 
+/// Экспорт одного плейлиста в JSON-файл и «Поделиться».
+Future<void> _exportPlaylist(PlaylistX pl) async {
+  try {
+    final data = {
+      'roundds_playlist': 1,
+      'name': pl.name,
+      'tracks': pl.tracks.map((t) => t.toJson()).toList(),
+    };
+    final json = const JsonEncoder.withIndent('  ').convert(data);
+    final dir = await getTemporaryDirectory();
+    final safe = pl.name.replaceAll(RegExp(r'[^\wА-Яа-яЁё -]'), '_');
+    final file = File('${dir.path}/$safe.json');
+    await file.writeAsString(json);
+    await Share.shareXFiles([XFile(file.path)],
+        text: 'Roundds — плейлист «${pl.name}»');
+  } catch (_) {/* отмена/ошибка шаринга не критична */}
+}
+
 List<PlaylistX> _sortPlaylists(List<PlaylistX> list, PlaylistSort sort) {
   final l = List<PlaylistX>.from(list);
   switch (sort) {
@@ -612,6 +665,14 @@ class _PlaylistsView extends ConsumerWidget {
                 if (name != null && name.isNotEmpty) {
                   await ref.read(libraryProvider).renamePlaylist(pl.id, name);
                 }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Экспорт в файл'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportPlaylist(pl);
               },
             ),
             ListTile(

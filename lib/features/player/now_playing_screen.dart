@@ -445,7 +445,9 @@ class NowPlayingScreen extends ConsumerWidget {
                     ? TextButton(
                         onPressed: () {
                           ref.read(sleepTimerProvider).cancel();
-                          ref.read(playbackProvider).setSleepAfterTrack(false);
+                          ref.read(playbackProvider)
+                            ..setSleepAfterTrack(false)
+                            ..setVolume(1);
                         },
                         child: const Text('Стоп'))
                     : null,
@@ -490,12 +492,25 @@ class NowPlayingScreen extends ConsumerWidget {
             for (final e in options.entries)
               ListTile(
                 title: Text(e.key),
+                subtitle: const Text('С плавным затуханием в конце',
+                    style: TextStyle(fontSize: 11)),
                 onTap: () {
-                  ref.read(playbackProvider).setSleepAfterTrack(false);
+                  final pc = ref.read(playbackProvider);
+                  pc.setSleepAfterTrack(false);
+                  const fadeMs = 30000; // затухание в последние 30 сек
                   ref.read(sleepTimerProvider).start(
-                        Duration(minutes: e.value),
-                        () => ref.read(playbackProvider).pause(),
-                      );
+                    Duration(minutes: e.value),
+                    () {
+                      pc.pause();
+                      pc.setVolume(1); // вернуть громкость для след. запуска
+                    },
+                    onTick: (rem) {
+                      final v = rem.inMilliseconds >= fadeMs
+                          ? 1.0
+                          : (rem.inMilliseconds / fadeMs).clamp(0.0, 1.0);
+                      pc.setVolume(v);
+                    },
+                  );
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Таймер сна: ${e.key}')));

@@ -129,6 +129,7 @@ class SettingsScreen extends ConsumerWidget {
             },
           );
         }),
+        _DataSaverTile(),
         const SizedBox(height: 16),
         const _Header('Резервная копия'),
         Row(
@@ -570,6 +571,30 @@ class _RfBypassState extends ConsumerState<_RfBypass> {
             ),
         ],
       ],
+    );
+  }
+}
+
+class _DataSaverTile extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_DataSaverTile> createState() => _DataSaverTileState();
+}
+
+class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
+  @override
+  Widget build(BuildContext context) {
+    final on = ref.read(prefsProvider).getBool('data_saver') ?? false;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: on,
+      title: const Text('Экономия трафика'),
+      subtitle: Text('Поток в низком битрейте (меньше данных, тише качество)',
+          style: TextStyle(color: AppColors.white45, fontSize: 11)),
+      onChanged: (v) {
+        ref.read(prefsProvider).setBool('data_saver', v);
+        ref.read(youtubeSourceProvider).preferLowBitrate = v;
+        setState(() {});
+      },
     );
   }
 }

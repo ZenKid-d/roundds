@@ -30,6 +30,7 @@ Future<void> main() async {
     enabled: prefs.getBool('rf_bypass') ?? false,
     instances: prefs.getStringList('rf_instances') ?? const [],
   );
+  youtube.preferLowBitrate = prefs.getBool('data_saver') ?? false;
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);

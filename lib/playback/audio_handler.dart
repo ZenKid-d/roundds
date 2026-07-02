@@ -86,6 +86,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
+  /// Громкость плеера (0..1) — используется плавным затуханием таймера сна.
+  Future<void> setVolume(double v) => _player.setVolume(v.clamp(0.0, 1.0));
+
   bool get crossfade => _crossfade;
   void setCrossfade(bool on) {
     _crossfade = on;
@@ -249,6 +252,14 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
+  /// Вставляет трек сразу после текущего («играть следующим»).
+  void playNextInQueue(Track t) {
+    final at = (_index >= 0 ? _index + 1 : _queue.length)
+        .clamp(0, _queue.length);
+    _queue.insert(at, t);
+    _notify();
+  }
+
   void reorderQueue(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex -= 1;
     final t = _queue.removeAt(oldIndex);
@@ -276,8 +287,18 @@ class RoundsAudioHandler extends BaseAudioHandler {
     }
     int next;
     if (_shuffle && _queue.length > 1) {
-      next = _rng.nextInt(_queue.length - 1);
-      if (next >= _index) next += 1;
+      // Умное перемешивание: избегаем того же артиста подряд, если можно.
+      final curArtist = current?.artist.toLowerCase();
+      next = _index;
+      for (var attempt = 0; attempt < 6; attempt++) {
+        var n = _rng.nextInt(_queue.length - 1);
+        if (n >= _index) n += 1;
+        next = n;
+        if (curArtist == null ||
+            _queue[n].artist.toLowerCase() != curArtist) {
+          break;
+        }
+      }
     } else {
       next = _index + 1;
     }

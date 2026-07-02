@@ -103,7 +103,9 @@ class PlaybackController extends ChangeNotifier {
   Future<void> next() => _handler.skipToNext();
   Future<void> previous() => _handler.skipToPrevious();
   Future<void> seek(Duration to) => _handler.seek(to);
+  Future<void> setVolume(double v) => _handler.setVolume(v);
   void addToQueue(Track t) => _handler.addToQueue(t);
+  void playNext(Track t) => _handler.playNextInQueue(t);
   void reorderQueue(int oldIndex, int newIndex) =>
       _handler.reorderQueue(oldIndex, newIndex);
 

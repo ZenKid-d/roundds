@@ -7,6 +7,7 @@ class SleepTimerController extends ChangeNotifier {
   Timer? _ticker;
   DateTime? _endsAt;
   VoidCallback? _onElapsed;
+  void Function(Duration remaining)? _onTick;
 
   bool get active => _endsAt != null;
 
@@ -16,9 +17,11 @@ class SleepTimerController extends ChangeNotifier {
     return r.isNegative ? Duration.zero : r;
   }
 
-  void start(Duration d, VoidCallback onElapsed) {
+  void start(Duration d, VoidCallback onElapsed,
+      {void Function(Duration remaining)? onTick}) {
     cancel();
     _onElapsed = onElapsed;
+    _onTick = onTick;
     _endsAt = DateTime.now().add(d);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       final r = remaining;
@@ -28,6 +31,7 @@ class SleepTimerController extends ChangeNotifier {
         cancel();
         cb?.call();
       } else {
+        _onTick?.call(r);
         notifyListeners();
       }
     });
@@ -39,6 +43,7 @@ class SleepTimerController extends ChangeNotifier {
     _ticker = null;
     _endsAt = null;
     _onElapsed = null;
+    _onTick = null;
     notifyListeners();
   }
 

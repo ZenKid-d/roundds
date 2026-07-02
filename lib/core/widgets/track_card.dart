@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/track.dart';
 import '../theme/app_colors.dart';
+import '../track_menu.dart';
 import 'artwork.dart';
 import 'service_badge.dart';
 
@@ -81,24 +83,29 @@ class _TrackCardState extends State<TrackCard> {
 }
 
 /// Горизонтальная строка трека (для поиска, плейлистов, очереди).
-class TrackRow extends StatelessWidget {
+/// По долгому тапу — контекстное меню (играть следующим / в очередь / радио…).
+class TrackRow extends ConsumerWidget {
   const TrackRow({
     super.key,
     required this.track,
     required this.onTap,
     this.trailing,
     this.active = false,
+    this.onLongPress,
   });
 
   final Track track;
   final VoidCallback onTap;
   final Widget? trailing;
   final bool active;
+  final VoidCallback? onLongPress;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return ListTile(
       onTap: onTap,
+      onLongPress:
+          onLongPress ?? () => showTrackMenu(context, ref, track),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: SizedBox(
         width: 52,
