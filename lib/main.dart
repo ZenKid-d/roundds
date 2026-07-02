@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'core/downloads_controller.dart';
 import 'core/providers.dart';
+import 'core/update_service.dart';
 import 'data/aggregator.dart';
 import 'data/recommendation_service.dart';
 import 'data/sources/soundcloud_source.dart';
@@ -24,6 +25,8 @@ Future<void> main() async {
   // Общие экземпляры — их же отдаём в Riverpod через overrides,
   // чтобы UI и аудио-хендлер работали с одними источниками.
   final dio = buildAppDio();
+  // Чистим оставшиеся после обновления APK из кэша.
+  unawaited(UpdateService(dio).cleanupApks());
   final youtube = YoutubeMusicSource(dio);
   // Обход блокировок (РФ): включённость и свои зеркала.
   youtube.configureBypass(

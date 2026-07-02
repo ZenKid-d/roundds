@@ -68,6 +68,22 @@ class UpdateService {
   Future<void> install(String path) =>
       OpenFilex.open(path, type: 'application/vnd.android.package-archive');
 
+  /// Удаляет все скачанные APK из кэша (вызывается при старте — после установки
+  /// обновления приложение перезапускается, и файлы больше не нужны).
+  Future<void> cleanupApks() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      if (!dir.existsSync()) return;
+      for (final e in dir.listSync()) {
+        if (e is File && e.path.toLowerCase().endsWith('.apk')) {
+          try {
+            e.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
   bool _isNewer(String latest, String current) {
     final a = _parts(latest);
     final b = _parts(current);
