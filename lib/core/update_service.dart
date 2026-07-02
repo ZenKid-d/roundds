@@ -49,8 +49,8 @@ class UpdateService {
   Future<String> currentVersion() async =>
       (await PackageInfo.fromPlatform()).version;
 
-  /// Скачивает APK и запускает системный установщик.
-  Future<void> downloadAndInstall(
+  /// Скачивает APK во временную папку и возвращает путь к файлу.
+  Future<String> download(
     UpdateInfo info, {
     void Function(double)? onProgress,
   }) async {
@@ -61,8 +61,12 @@ class UpdateService {
     await _dio.download(info.apkUrl, path, onReceiveProgress: (r, t) {
       if (t > 0) onProgress?.call(r / t);
     });
-    await OpenFilex.open(path, type: 'application/vnd.android.package-archive');
+    return path;
   }
+
+  /// Запускает системный установщик для ранее скачанного APK.
+  Future<void> install(String path) =>
+      OpenFilex.open(path, type: 'application/vnd.android.package-archive');
 
   bool _isNewer(String latest, String current) {
     final a = _parts(latest);

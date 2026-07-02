@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../../core/downloads_controller.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -349,6 +350,36 @@ class _DownloadsView extends ConsumerWidget {
   }
 }
 
+/// Иконка состояния скачивания трека для строки плейлиста: прогресс во время
+/// загрузки, «готово» для скачанного, кнопка «скачать» — для остального.
+Widget _trackDlStatus(
+    BuildContext context, WidgetRef ref, DownloadsController dl, Track t) {
+  final accent = Theme.of(context).colorScheme.primary;
+  if (dl.isDownloading(t.uid)) {
+    final p = dl.progressFor(t.uid);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: SizedBox(
+        width: 22,
+        height: 22,
+        child: CircularProgressIndicator(
+            value: p == 0 ? null : p, strokeWidth: 2, color: accent),
+      ),
+    );
+  }
+  if (dl.isDownloaded(t.uid)) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Icon(Icons.download_done, size: 20, color: accent),
+    );
+  }
+  return IconButton(
+    icon: Icon(Icons.download_outlined, color: AppColors.white45),
+    tooltip: 'Скачать трек',
+    onPressed: () => ref.read(downloadsProvider).download(t),
+  );
+}
+
 Future<String?> _askName(BuildContext context, String title,
     {String initial = ''}) {
   final c = TextEditingController(text: initial);
@@ -540,17 +571,26 @@ class PlaylistScreen extends ConsumerWidget {
                   style: TextStyle(color: AppColors.white45)))
           : ListView.builder(
               itemCount: pl.tracks.length,
-              itemBuilder: (_, i) => TrackRow(
-                track: pl.tracks[i],
-                onTap: () =>
-                    playTrack(ref, context, pl.tracks[i], queue: pl.tracks),
-                trailing: IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
-                  onPressed: () => ref
-                      .read(libraryProvider)
-                      .removeFromPlaylist(playlistId, pl.tracks[i]),
-                ),
-              ),
+              itemBuilder: (_, i) {
+                final t = pl.tracks[i];
+                return TrackRow(
+                  track: t,
+                  onTap: () => playTrack(ref, context, t, queue: pl.tracks),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _trackDlStatus(context, ref, downloads, t),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        tooltip: 'Убрать из плейлиста',
+                        onPressed: () => ref
+                            .read(libraryProvider)
+                            .removeFromPlaylist(playlistId, t),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
     );
   }

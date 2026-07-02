@@ -2,32 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
-import 'update_service.dart';
+import 'update_controller.dart';
 
-/// Проверка обновлений и весь UX: диалог с описанием изменений →
-/// прогресс скачивания → запуск установщика.
+/// Проверяет обновление и показывает диалог с описанием изменений. Скачивание
+/// идёт в ФОНЕ (через [UpdateController]) — прогресс и кнопку «Установить»
+/// показывает плавающий баннер, поэтому установить можно в любой момент.
 ///
-/// [silent] — при true ничего не показываем, если обновления нет и если
-/// проверка упала (тихая авто-проверка при запуске). При false (кнопка в
-/// настройках) сообщаем результат в любом случае.
+/// [silent] — при true молчим, если обновления нет или проверка не удалась
+/// (тихая авто-проверка при запуске). При false (кнопка) сообщаем результат.
 Future<void> checkForUpdate(
   BuildContext context,
   WidgetRef ref, {
   bool silent = true,
 }) async {
-  UpdateInfo? info;
-  try {
-    info = await ref.read(updateServiceProvider).check();
-  } catch (_) {
+  final ctl = ref.read(updateControllerProvider);
+
+  // Уже скачано — сразу предлагаем установить.
+  if (ctl.isReady) {
+    if (context.mounted) _promptInstall(context, ctl);
+    return;
+  }
+  if (ctl.isDownloading) {
     if (!silent && context.mounted) {
-      _snack(context, 'Не удалось проверить обновления');
+      _snack(context, 'Обновление уже загружается…');
     }
     return;
   }
 
+  final info = await ctl.check();
+
   if (info == null) {
     if (!silent && context.mounted) {
-      _snack(context, 'У вас установлена последняя версия');
+      _snack(
+          context,
+          ctl.stage == UpdateStage.error
+              ? 'Не удалось проверить обновления'
+              : 'У вас установлена последняя версия');
     }
     return;
   }
@@ -36,13 +46,13 @@ Future<void> checkForUpdate(
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('Обновление ${info!.version}'),
+      title: Text('Обновление ${info.version}'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 340),
         child: SingleChildScrollView(
           child: Text(
             info.notes.trim().isEmpty
-                ? 'Доступна новая версия. Обновить сейчас?'
+                ? 'Доступна новая версия. Скачать сейчас?'
                 : info.notes.trim(),
             style: const TextStyle(height: 1.4),
           ),
@@ -55,53 +65,38 @@ Future<void> checkForUpdate(
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Обновить'),
+          child: const Text('Скачать в фоне'),
         ),
       ],
     ),
   );
-  if (go != true || !context.mounted) return;
+  if (go != true) return;
 
-  final progress = ValueNotifier<double>(0);
-  showDialog(
+  // Запускаем фоновую загрузку и не ждём её — прогресс покажет баннер.
+  ctl.download();
+  if (context.mounted) {
+    _snack(context, 'Загрузка обновления началась — можно продолжать слушать');
+  }
+}
+
+/// Диалог «скачано — установить сейчас?».
+Future<void> _promptInstall(BuildContext context, UpdateController ctl) async {
+  final go = await showDialog<bool>(
     context: context,
-    barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      title: const Text('Скачивание обновления'),
-      content: ValueListenableBuilder<double>(
-        valueListenable: progress,
-        builder: (_, v, __) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: v <= 0 ? null : v,
-                minHeight: 8,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(v <= 0 ? 'Подготовка…' : '${(v * 100).round()}%'),
-          ],
-        ),
-      ),
+    builder: (ctx) => AlertDialog(
+      title: Text('Обновление ${ctl.info?.version ?? ''} готово'),
+      content: const Text('Установить сейчас?'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Позже')),
+        FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Установить')),
+      ],
     ),
   );
-
-  try {
-    await ref.read(updateServiceProvider).downloadAndInstall(
-          info,
-          onProgress: (p) => progress.value = p,
-        );
-    if (context.mounted) Navigator.pop(context); // закрыть прогресс
-  } catch (_) {
-    if (context.mounted) {
-      Navigator.pop(context);
-      _snack(context, 'Ошибка при загрузке обновления');
-    }
-  } finally {
-    progress.dispose();
-  }
+  if (go == true) ctl.install();
 }
 
 void _snack(BuildContext c, String m) =>

@@ -34,12 +34,166 @@ class YoutubeMusicSource implements MusicSource {
 
   @override
   Future<List<Track>> search(String query, {int limit = 20}) async {
+    // Приоритет — поиск YouTube Music (фильтр «Songs»): только музыка, с
+    // квадратными обложками альбомов. Если он недоступен — обычный поиск
+    // YouTube с фильтром по длительности.
+    try {
+      final music = await _musicSearch(query, limit: limit);
+      if (music.isNotEmpty) return music;
+    } catch (_) {/* падаем на обычный поиск */}
     try {
       final results = await _yt.search.search(query);
       return _onlyMusic(results).take(limit).toList();
     } catch (e) {
       throw SourceException(type, 'не удалось выполнить поиск ($e)');
     }
+  }
+
+  // --- Поиск через InnerTube music.youtube.com (только музыка) ---
+
+  String? _musicKey;
+  String? _musicVer;
+
+  /// Фильтр результатов «Songs» (из ytmusicapi).
+  static const _songsParam = 'EgWKAQIIAWoKEAkQBRAKEAMQBA==';
+
+  Future<void> _ensureMusicKeys() async {
+    if (_musicKey != null) return;
+    final home = await _dio.get<String>('https://music.youtube.com/',
+        options: Options(responseType: ResponseType.plain, headers: {
+          'User-Agent': _ua,
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cookie': 'SOCS=CAI;',
+        }));
+    final html = home.data ?? '';
+    _musicKey =
+        RegExp(r'"INNERTUBE_API_KEY":"([^"]+)"').firstMatch(html)?.group(1);
+    _musicVer = RegExp(r'"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"')
+            .firstMatch(html)
+            ?.group(1) ??
+        '1.20240101.01.00';
+  }
+
+  Future<List<Track>> _musicSearch(String query, {int limit = 20}) async {
+    await _ensureMusicKeys();
+    if (_musicKey == null) return const [];
+    final resp = await _dio.post(
+      'https://music.youtube.com/youtubei/v1/search',
+      queryParameters: {'key': _musicKey},
+      data: {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': _musicVer,
+            'hl': 'en',
+            'gl': 'US',
+          }
+        },
+        'query': query,
+        'params': _songsParam,
+      },
+      options: Options(headers: {
+        'User-Agent': _ua,
+        'Content-Type': 'application/json',
+        'Origin': 'https://music.youtube.com',
+        'Referer': 'https://music.youtube.com/',
+      }),
+    );
+    final out = <Track>[];
+    final seen = <String>{};
+    void walk(dynamic n) {
+      if (out.length >= limit) return;
+      if (n is Map) {
+        final r = n['musicResponsiveListItemRenderer'];
+        if (r is Map) {
+          final t = _mrlirToTrack(r);
+          if (t != null && seen.add(t.id)) out.add(t);
+        }
+        for (final v in n.values) {
+          walk(v);
+        }
+      } else if (n is List) {
+        for (final v in n) {
+          walk(v);
+        }
+      }
+    }
+
+    walk(resp.data);
+    return out;
+  }
+
+  /// Разбирает musicResponsiveListItemRenderer в Track.
+  Track? _mrlirToTrack(Map r) {
+    final videoId = (_dig(r, ['playlistItemData', 'videoId']) ??
+        _dig(r, [
+          'overlay',
+          'musicItemThumbnailOverlayRenderer',
+          'content',
+          'musicPlayButtonRenderer',
+          'playNavigationEndpoint',
+          'watchEndpoint',
+          'videoId'
+        ]) ??
+        _dig(r, [
+          'flexColumns',
+          0,
+          'musicResponsiveListItemFlexColumnRenderer',
+          'text',
+          'runs',
+          0,
+          'navigationEndpoint',
+          'watchEndpoint',
+          'videoId'
+        ])) as String?;
+    final title = _dig(r, [
+      'flexColumns',
+      0,
+      'musicResponsiveListItemFlexColumnRenderer',
+      'text',
+      'runs',
+      0,
+      'text'
+    ]) as String?;
+    if (videoId == null || title == null) return null;
+
+    var artist = 'YouTube';
+    Duration? duration;
+    final runs = _dig(r, [
+      'flexColumns',
+      1,
+      'musicResponsiveListItemFlexColumnRenderer',
+      'text',
+      'runs'
+    ]);
+    if (runs is List && runs.isNotEmpty) {
+      artist = (_dig(runs.first, ['text']) ?? 'YouTube').toString();
+      duration = _parseClockDuration(_dig(runs.last, ['text'])?.toString());
+    }
+    const topic = ' - Topic';
+    if (artist.endsWith(topic)) {
+      artist = artist.substring(0, artist.length - topic.length);
+    }
+
+    // Настоящая квадратная обложка альбома (googleusercontent) — если есть,
+    // берём её (крупнее), иначе превью видео.
+    String? art;
+    final thumbs = _dig(
+        r, ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
+    if (thumbs is List && thumbs.isNotEmpty) {
+      final url = _dig(thumbs.last, ['url'])?.toString();
+      art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w544-h544');
+    }
+    art ??= ytArtwork(videoId);
+
+    return Track(
+      id: videoId,
+      title: title,
+      artist: artist,
+      artworkUrl: art,
+      duration: duration,
+      source: SourceType.youtube,
+    );
   }
 
   @override

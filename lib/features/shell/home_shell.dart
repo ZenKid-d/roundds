@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/mini_player.dart';
 import '../drawer/app_drawer.dart';
@@ -78,6 +80,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 ),
               ),
             ),
+            const _UpdateBanner(),
             const MiniPlayer(),
           ],
         ),
@@ -91,6 +94,72 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         AppSection.library => const LibraryScreen(),
         AppSection.settings => const SettingsScreen(),
       };
+}
+
+/// Плавающий баннер обновления: прогресс фоновой загрузки и кнопка
+/// «Установить», когда APK скачан (установить можно в любой момент).
+class _UpdateBanner extends ConsumerWidget {
+  const _UpdateBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ctl = ref.watch(updateControllerProvider);
+    if (!ctl.bannerVisible) return const SizedBox.shrink();
+    final accent = Theme.of(context).colorScheme.primary;
+    final version = ctl.info?.version ?? '';
+
+    if (ctl.isDownloading) {
+      final pct = (ctl.progress * 100).round();
+      return Container(
+        color: AppColors.surface1,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  value: ctl.progress == 0 ? null : ctl.progress,
+                  strokeWidth: 2,
+                  color: accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Загрузка обновления $version… $pct%',
+                  style: const TextStyle(fontSize: 12.5)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Готово к установке.
+    return Container(
+      color: AppColors.surface1,
+      padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
+      child: Row(
+        children: [
+          Icon(Icons.system_update, color: accent, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Обновление $version готово',
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w500)),
+          ),
+          TextButton(
+            onPressed: () => ref.read(updateControllerProvider).install(),
+            child: const Text('Установить'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Скрыть',
+            onPressed: () =>
+                ref.read(updateControllerProvider).dismissBanner(),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TopBar extends StatelessWidget {

@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
@@ -392,36 +393,57 @@ class _Header extends StatelessWidget {
       );
 }
 
-class _UpdateTile extends ConsumerStatefulWidget {
+class _UpdateTile extends ConsumerWidget {
   const _UpdateTile();
-  @override
-  ConsumerState<_UpdateTile> createState() => _UpdateTileState();
-}
-
-class _UpdateTileState extends ConsumerState<_UpdateTile> {
-  bool _checking = false;
-
-  Future<void> _check() async {
-    setState(() => _checking = true);
-    await checkForUpdate(context, ref, silent: false);
-    if (mounted) setState(() => _checking = false);
-  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ctl = ref.watch(updateControllerProvider);
+    final version = ctl.info?.version ?? '';
+
+    // Скачано — предлагаем установить.
+    if (ctl.isReady) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.system_update),
+        title: Text('Установить обновление $version'),
+        subtitle: Text('Файл скачан — можно установить в любой момент',
+            style: TextStyle(color: AppColors.white45, fontSize: 11)),
+        trailing: const Icon(Icons.download_done),
+        onTap: () => ref.read(updateControllerProvider).install(),
+      );
+    }
+
+    // Идёт фоновая загрузка.
+    if (ctl.isDownloading) {
+      final pct = (ctl.progress * 100).round();
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.system_update),
+        title: Text('Загрузка обновления $version…'),
+        subtitle: Text('$pct% · продолжается в фоне',
+            style: TextStyle(color: AppColors.white45, fontSize: 11)),
+        trailing: const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    final checking = ctl.stage == UpdateStage.checking;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.system_update),
       title: const Text('Проверить обновления'),
       subtitle: Text('Загрузка новой версии прямо из приложения',
           style: TextStyle(color: AppColors.white45, fontSize: 11)),
-      trailing: _checking
+      trailing: checking
           ? const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2))
           : const Icon(Icons.chevron_right),
-      onTap: _checking ? null : _check,
+      onTap: checking ? null : () => checkForUpdate(context, ref, silent: false),
     );
   }
 }
