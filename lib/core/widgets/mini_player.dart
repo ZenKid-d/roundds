@@ -21,6 +21,9 @@ class MiniPlayer extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () => context.push('/player'),
+      onVerticalDragEnd: (d) {
+        if ((d.primaryVelocity ?? 0) < -250) context.push('/player');
+      },
       child: Container(
         margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
         height: 74,

@@ -25,11 +25,26 @@ class RoundsAudioHandler extends BaseAudioHandler {
   final Random _rng = Random();
 
   final AndroidEqualizer _equalizer = AndroidEqualizer();
+  final AndroidLoudnessEnhancer _loudness = AndroidLoudnessEnhancer();
   late final AudioPlayer _player = AudioPlayer(
-    audioPipeline: AudioPipeline(androidAudioEffects: [_equalizer]),
+    audioPipeline:
+        AudioPipeline(androidAudioEffects: [_loudness, _equalizer]),
   );
 
   AndroidEqualizer get equalizer => _equalizer;
+
+  // Нормализация громкости: поднимаем тихие треки к целевой громкости
+  // (LoudnessEnhancer с компрессией — не даёт клиппинга).
+  bool _normalize = false;
+  bool get normalize => _normalize;
+  Future<void> setNormalize(bool on) async {
+    _normalize = on;
+    try {
+      await _loudness.setTargetGain(on ? 5.0 : 0.0);
+      await _loudness.setEnabled(on);
+    } catch (_) {/* платформа может не поддерживать */}
+    _notify();
+  }
 
   /// Локальный путь к скачанному треку (оффлайн). Ставится из main().
   String? Function(String uid)? localFileResolver;

@@ -63,6 +63,9 @@ Future<void> main() async {
   if (prefs.getBool('skip_silence') ?? false) {
     unawaited(handler.setSkipSilence(true));
   }
+  if (prefs.getBool('normalize') ?? false) {
+    unawaited(handler.setNormalize(true));
+  }
 
   runApp(
     ProviderScope(

@@ -129,6 +129,20 @@ class SettingsScreen extends ConsumerWidget {
             },
           );
         }),
+        Consumer(builder: (context, ref, _) {
+          final on = ref.watch(playbackProvider).normalize;
+          return SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: on,
+            title: const Text('Нормализация громкости'),
+            subtitle: Text('Выравнивает громкость тихих и громких треков',
+                style: TextStyle(color: AppColors.white45, fontSize: 11)),
+            onChanged: (v) {
+              ref.read(playbackProvider).setNormalize(v);
+              ref.read(prefsProvider).setBool('normalize', v);
+            },
+          );
+        }),
         _DataSaverTile(),
         const SizedBox(height: 16),
         const _Header('Резервная копия'),

@@ -76,6 +76,8 @@ class PlaybackController extends ChangeNotifier {
   void setCrossfadeSeconds(double s) => _handler.setCrossfadeSeconds(s);
   bool get skipSilence => _handler.skipSilence;
   Future<void> setSkipSilence(bool on) => _handler.setSkipSilence(on);
+  bool get normalize => _handler.normalize;
+  Future<void> setNormalize(bool on) => _handler.setNormalize(on);
 
   bool get sleepAfterTrack => _handler.sleepAfterTrack;
   void setSleepAfterTrack(bool on) {

@@ -138,6 +138,19 @@ class RecommendationService {
       } catch (_) {}
     }
 
+    // 3.5) «Потому что вы слушали…» — по самому прослушиваемому треку.
+    if (topTracks.isNotEmpty) {
+      final s = topTracks.first.key;
+      if (history.isEmpty || s.uid != history.first.uid) {
+        final sim =
+            (await similarTo(s)).where((t) => !known.contains(t.uid)).toList();
+        if (sim.isNotEmpty) {
+          rows.add(RecoRow(
+              'Потому что вы слушали «${s.title}»', sim.take(24).toList()));
+        }
+      }
+    }
+
     // 4) «Открывайте новое» — из пулов, но артисты, которых ещё нет в
     // библиотеке (настоящее открытие, а не «ещё того же»).
     final discover = <String, Track>{};

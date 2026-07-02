@@ -13,6 +13,7 @@ import '../../core/widgets/vinyl_disc.dart';
 import '../../domain/models/track.dart';
 import '../../playback/audio_handler.dart';
 import '../artist/artist_screen.dart';
+import '../common/track_list_screen.dart';
 import 'equalizer_screen.dart';
 import 'lyrics_screen.dart';
 
@@ -48,15 +49,43 @@ class NowPlayingScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Expanded(
                   child: Center(
-                    child: ts.playerView == PlayerView.cover
-                        ? _coverArt(track, accent)
-                        : VinylDisc(
-                            artworkUrl: track.artworkUrl,
-                            isPlaying: pc.isPlaying && ts.spin,
-                            accent: accent,
-                            seed: track.uid,
-                            size: 250,
+                    child: GestureDetector(
+                      // Жесты: свайп влево — след., вправо — пред., вниз — закрыть.
+                      onHorizontalDragEnd: (d) {
+                        final v = d.primaryVelocity ?? 0;
+                        if (v < -250) {
+                          ref.read(playbackProvider).next();
+                        } else if (v > 250) {
+                          ref.read(playbackProvider).previous();
+                        }
+                      },
+                      onVerticalDragEnd: (d) {
+                        if ((d.primaryVelocity ?? 0) > 300) context.pop();
+                      },
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 350),
+                        switchInCurve: Curves.easeOut,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: ScaleTransition(
+                            scale: Tween(begin: 0.94, end: 1.0).animate(anim),
+                            child: child,
                           ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey(track.uid),
+                          child: ts.playerView == PlayerView.cover
+                              ? _coverArt(track, accent)
+                              : VinylDisc(
+                                  artworkUrl: track.artworkUrl,
+                                  isPlaying: pc.isPlaying && ts.spin,
+                                  accent: accent,
+                                  seed: track.uid,
+                                  size: 250,
+                                ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Text(track.title,
@@ -400,6 +429,21 @@ class NowPlayingScreen extends ConsumerWidget {
                     .read(recommendationServiceProvider)
                     .radioFrom(track);
                 await ref.read(playbackProvider).startRadio(track, list);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.recommend_outlined),
+              title: const Text('Похожие треки'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => TrackListScreen(
+                    title: 'Похоже на «${track.title}»',
+                    loader: () => ref
+                        .read(recommendationServiceProvider)
+                        .similarTo(track),
+                  ),
+                ));
               },
             ),
             ListTile(
