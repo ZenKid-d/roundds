@@ -95,6 +95,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   void Function(Track track)? onTrackStarted;
 
   AudioPlayer get player => _player;
+  int? get androidAudioSessionId => _player.androidAudioSessionId;
   List<Track> get trackQueue => List.unmodifiable(_queue);
   Track? get current =>
       (_index >= 0 && _index < _queue.length) ? _queue[_index] : null;

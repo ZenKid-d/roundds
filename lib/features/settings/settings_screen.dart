@@ -160,6 +160,7 @@ class SettingsScreen extends ConsumerWidget {
           );
         }),
         _DataSaverTile(),
+        _RealVizTile(),
         const SizedBox(height: 16),
         const _Header('Резервная копия'),
         Row(
@@ -725,6 +726,31 @@ class _LastfmState extends ConsumerState<_Lastfm> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _RealVizTile extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_RealVizTile> createState() => _RealVizTileState();
+}
+
+class _RealVizTileState extends ConsumerState<_RealVizTile> {
+  @override
+  Widget build(BuildContext context) {
+    final on = ref.read(prefsProvider).getBool('real_visualizer') ?? false;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: on,
+      title: const Text('Реальный визуализатор'),
+      subtitle: Text(
+          'Спектр по звуку/биту (Android Visualizer). Требует разрешение '
+          'микрофона — оно нужно системе для доступа к аудио, запись не ведётся.',
+          style: TextStyle(color: AppColors.white45, fontSize: 11)),
+      onChanged: (v) {
+        ref.read(prefsProvider).setBool('real_visualizer', v);
+        setState(() {});
+      },
     );
   }
 }

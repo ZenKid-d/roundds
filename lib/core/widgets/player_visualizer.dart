@@ -1,10 +1,17 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-/// Декоративный спектр-визуализатор под обложкой. Анимируется во время
-/// воспроизведения (не настоящий FFT — just_audio не отдаёт спектр).
-class PlayerVisualizer extends StatefulWidget {
+import '../providers.dart';
+import '../../data/visualizer_channel.dart';
+
+/// Спектр-визуализатор под обложкой. При включённом «реальном» режиме берёт FFT
+/// из нативного Android Visualizer (реагирует на звук/бит); иначе — декоративная
+/// анимация.
+class PlayerVisualizer extends ConsumerStatefulWidget {
   const PlayerVisualizer({
     super.key,
     required this.playing,
@@ -19,18 +26,26 @@ class PlayerVisualizer extends StatefulWidget {
   final double height;
 
   @override
-  State<PlayerVisualizer> createState() => _PlayerVisualizerState();
+  ConsumerState<PlayerVisualizer> createState() => _PlayerVisualizerState();
 }
 
-class _PlayerVisualizerState extends State<PlayerVisualizer>
+class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1400));
+
+  StreamSubscription<List<double>>? _sub;
+  bool _started = false;
+  List<double> _smooth = [];
+
+  bool get _realEnabled =>
+      ref.read(prefsProvider).getBool('real_visualizer') ?? false;
 
   @override
   void initState() {
     super.initState();
     if (widget.playing) _c.repeat();
+    _apply();
   }
 
   @override
@@ -41,12 +56,68 @@ class _PlayerVisualizerState extends State<PlayerVisualizer>
     } else if (!widget.playing && _c.isAnimating) {
       _c.stop();
     }
+    _apply();
+  }
+
+  void _apply() {
+    if (_realEnabled && widget.playing) {
+      _ensureStarted();
+    } else {
+      _stopReal();
+    }
+  }
+
+  Future<void> _ensureStarted() async {
+    if (_started) return;
+    _started = true;
+    final ok = await Permission.microphone.request();
+    if (!ok.isGranted) {
+      _started = false;
+      return;
+    }
+    final sid = ref.read(audioHandlerProvider).androidAudioSessionId ?? 0;
+    final started = await VisualizerChannel.instance.start(sid);
+    if (!started) {
+      _started = false;
+      return;
+    }
+    _sub = VisualizerChannel.instance.bands.listen((b) {
+      if (!mounted) return;
+      // Сглаживание: быстрый рост, плавный спад (эффект «отпускания» полос).
+      if (_smooth.length != b.length) _smooth = List<double>.filled(b.length, 0);
+      for (var i = 0; i < b.length; i++) {
+        _smooth[i] = max(b[i], _smooth[i] * 0.80);
+      }
+      setState(() {});
+    });
+  }
+
+  void _stopReal() {
+    if (!_started && _sub == null) return;
+    _sub?.cancel();
+    _sub = null;
+    _started = false;
+    _smooth = [];
+    VisualizerChannel.instance.stop();
   }
 
   @override
   void dispose() {
+    _stopReal();
     _c.dispose();
     super.dispose();
+  }
+
+  double _valueAt(int i) {
+    // Реальные данные, если есть; иначе — декоративная волна.
+    if (_realEnabled && _smooth.isNotEmpty && widget.playing) {
+      final idx = (i * _smooth.length / widget.bars).floor().clamp(0, _smooth.length - 1);
+      return _smooth[idx];
+    }
+    if (!widget.playing) return 0.14;
+    final t = _c.value * 2 * pi;
+    return (0.5 + 0.5 * sin(t + i * 0.5) * sin(t * 0.7 + i * 0.28).abs())
+        .clamp(0.0, 1.0);
   }
 
   @override
@@ -61,22 +132,15 @@ class _PlayerVisualizerState extends State<PlayerVisualizer>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: List.generate(widget.bars, (i) {
-                final t = _c.value * 2 * pi;
-                // Разные фазы/частоты — «живой» спектр; на паузе — низкие.
-                final wave = widget.playing
-                    ? (0.5 +
-                        0.5 *
-                            sin(t + i * 0.5) *
-                            sin(t * 0.7 + i * 0.28).abs())
-                    : 0.14;
-                final h = (widget.height * (0.12 + 0.88 * wave))
-                    .clamp(3.0, widget.height);
+                final v = _valueAt(i);
+                final h =
+                    (widget.height * (0.12 + 0.88 * v)).clamp(3.0, widget.height);
                 return Container(
                   width: 3,
                   height: h,
                   decoration: BoxDecoration(
-                    color: widget.color.withValues(
-                        alpha: widget.playing ? 0.85 : 0.35),
+                    color: widget.color
+                        .withValues(alpha: widget.playing ? 0.85 : 0.35),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 );
