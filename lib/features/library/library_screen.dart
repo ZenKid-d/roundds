@@ -270,9 +270,15 @@ class _LikedView extends ConsumerWidget {
       itemBuilder: (_, i) => TrackRow(
         track: liked[i],
         onTap: () => playTrack(ref, context, liked[i], queue: liked),
-        trailing: IconButton(
-          icon: const Icon(Icons.favorite, color: Color(0xFFE24B4A)),
-          onPressed: () => ref.read(libraryProvider).toggleLike(liked[i]),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TrackDownloadStatus(liked[i]),
+            IconButton(
+              icon: const Icon(Icons.favorite, color: Color(0xFFE24B4A)),
+              onPressed: () => ref.read(libraryProvider).toggleLike(liked[i]),
+            ),
+          ],
         ),
       ),
     );

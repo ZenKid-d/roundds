@@ -68,12 +68,16 @@ class DownloadsController extends ChangeNotifier {
             .toList()),
       );
 
-  Future<void> download(Track track, {bool notify = true}) async {
-    if (isDownloaded(track.uid) || isDownloading(track.uid)) return;
+  /// Скачивает один трек. Возвращает true, если файл уже есть или успешно
+  /// скачан; false — если не удалось (ошибка потока/сети).
+  Future<bool> download(Track track, {bool notify = true}) async {
+    if (isDownloaded(track.uid)) return true;
+    if (isDownloading(track.uid)) return false;
     _inProgress.add(track.uid);
     _downloading[track.uid] = track;
     _progress[track.uid] = 0;
     notifyListeners();
+    var ok = false;
     try {
       final stream = await _aggregator.resolveStreamWithFallback(track);
       final dir = await getApplicationDocumentsDirectory();
@@ -95,20 +99,23 @@ class DownloadsController extends ChangeNotifier {
       _tracks[track.uid] = track;
       _paths[track.uid] = path;
       await _persist();
+      ok = true;
       if (notify) {
         await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
       }
     } catch (_) {
-      // ошибку проглатываем — в UI трек просто не отметится скачанным
+      // не удалось — вернём false, вызывающий может повторить
     } finally {
       _inProgress.remove(track.uid);
       _downloading.remove(track.uid);
       _progress.remove(track.uid);
       notifyListeners();
     }
+    return ok;
   }
 
-  /// Скачать весь плейлист. Уведомление — одно, в конце (не на каждый трек).
+  /// Скачать весь плейлист. Каждый трек — до 3 попыток, чтобы временные сбои
+  /// сети/потока не приводили к пропуску. Уведомление — одно, в конце.
   Future<void> downloadPlaylist(String name, List<Track> tracks) async {
     if (_playlistBusy || tracks.isEmpty) return;
     _playlistBusy = true;
@@ -116,9 +123,17 @@ class DownloadsController extends ChangeNotifier {
     _playlistProgress = 0;
     notifyListeners();
     var done = 0;
+    var failed = 0;
     for (final t in tracks) {
       if (!isDownloaded(t.uid)) {
-        await download(t, notify: false);
+        var ok = false;
+        for (var attempt = 0; attempt < 3 && !ok; attempt++) {
+          ok = await download(t, notify: false);
+          if (!ok) {
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        }
+        if (!ok) failed++;
       }
       done++;
       _playlistProgress = done / tracks.length;
@@ -128,8 +143,11 @@ class DownloadsController extends ChangeNotifier {
     _playlistName = null;
     _playlistProgress = 0;
     notifyListeners();
-    await _notif.show('Плейлист скачан', '$name · ${tracks.length} треков',
-        id: 1);
+    final total = tracks.length;
+    final body = failed == 0
+        ? '$name · $total треков'
+        : '$name · скачано ${total - failed}, не удалось $failed';
+    await _notif.show('Плейлист скачан', body, id: 1);
   }
 
   /// Суммарный размер скачанных файлов, в байтах.
