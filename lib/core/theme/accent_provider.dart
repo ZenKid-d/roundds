@@ -28,8 +28,8 @@ final effectiveAccentProvider = Provider<Color>((ref) {
 });
 
 /// Динамический акцент: первый достаточно насыщенный цвет обложки.
-/// Если обложка серая/чёрно-белая (нет цветного оттенка) — оставляем акцент
-/// по умолчанию, чтобы не красить серый в случайный цвет.
+/// Если обложка серая/чёрно-белая (нет цветного оттенка) — акцент белый
+/// (не выдумываем случайный оттенок для серого).
 final accentProvider = FutureProvider<Color>((ref) async {
   final url = ref.watch(currentArtworkProvider);
   if (url == null || url.isEmpty) return AppColors.defaultAccent;
@@ -53,8 +53,8 @@ final accentProvider = FutureProvider<Color>((ref) async {
     for (final c in candidates) {
       if (HSLColor.fromColor(c).saturation >= 0.22) return _ensureVivid(c);
     }
-    // Обложка без цвета — не выдумываем оттенок.
-    return AppColors.defaultAccent;
+    // Обложка чёрно-белая — акцент белый.
+    return Colors.white;
   } catch (_) {
     return AppColors.defaultAccent;
   }
