@@ -74,26 +74,30 @@ class _VinylDiscState extends State<VinylDisc>
       ),
       child: RotationTransition(
         turns: _c,
-        child: ClipOval(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Вся обложка кругом — квадратные края обрезаны.
-              Artwork(widget.artworkUrl,
-                  size: s, radius: 999, seed: widget.seed),
-              // Дырка по центру, как у пластинки.
-              Center(
-                child: Container(
-                  width: s * 0.05,
-                  height: s * 0.05,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black,
-                    border: Border.all(color: Colors.white38, width: 2),
+        // Диск растеризуется в слой один раз — вращение становится дешёвым
+        // трансформом слоя (без пере-обрезки обложки на каждом кадре).
+        child: RepaintBoundary(
+          child: ClipOval(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Вся обложка кругом — квадратные края обрезаны.
+                Artwork(widget.artworkUrl,
+                    size: s, radius: 999, seed: widget.seed),
+                // Дырка по центру, как у пластинки.
+                Center(
+                  child: Container(
+                    width: s * 0.05,
+                    height: s * 0.05,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black,
+                      border: Border.all(color: Colors.white38, width: 2),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
