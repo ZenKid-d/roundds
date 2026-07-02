@@ -17,11 +17,28 @@ import '../common/track_list_screen.dart';
 import 'equalizer_screen.dart';
 import 'lyrics_screen.dart';
 
-class NowPlayingScreen extends ConsumerWidget {
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+  int _dir = 1; // направление смены пластинки: 1 — вперёд, -1 — назад
+
+  void _goNext() {
+    setState(() => _dir = 1);
+    ref.read(playbackProvider).next();
+  }
+
+  void _goPrev() {
+    setState(() => _dir = -1);
+    ref.read(playbackProvider).previous();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final pc = ref.watch(playbackProvider);
     final accent = Theme.of(context).colorScheme.primary;
     final ts = ref.watch(themeSettingsProvider);
@@ -54,24 +71,43 @@ class NowPlayingScreen extends ConsumerWidget {
                       onHorizontalDragEnd: (d) {
                         final v = d.primaryVelocity ?? 0;
                         if (v < -250) {
-                          ref.read(playbackProvider).next();
+                          _goNext();
                         } else if (v > 250) {
-                          ref.read(playbackProvider).previous();
+                          _goPrev();
                         }
                       },
                       onVerticalDragEnd: (d) {
                         if ((d.primaryVelocity ?? 0) > 300) context.pop();
                       },
                       child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 350),
-                        switchInCurve: Curves.easeOut,
-                        transitionBuilder: (child, anim) => FadeTransition(
-                          opacity: anim,
-                          child: ScaleTransition(
-                            scale: Tween(begin: 0.94, end: 1.0).animate(anim),
-                            child: child,
-                          ),
-                        ),
+                        duration: const Duration(milliseconds: 420),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, anim) {
+                          // Новая пластинка «въезжает» со стороны переключения,
+                          // старая уезжает и слегка поворачивается — смена винила.
+                          final incoming = child.key == ValueKey(track.uid);
+                          final dir = incoming ? _dir : -_dir;
+                          final slide = Tween<Offset>(
+                            begin: Offset(0.6 * dir, 0.12),
+                            end: Offset.zero,
+                          ).animate(anim);
+                          return FadeTransition(
+                            opacity: anim,
+                            child: SlideTransition(
+                              position: slide,
+                              child: ScaleTransition(
+                                scale:
+                                    Tween(begin: 0.9, end: 1.0).animate(anim),
+                                child: RotationTransition(
+                                  turns: Tween(begin: -0.04 * dir, end: 0.0)
+                                      .animate(anim),
+                                  child: child,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                         child: KeyedSubtree(
                           key: ValueKey(track.uid),
                           child: ts.playerView == PlayerView.cover
@@ -219,7 +255,7 @@ class NowPlayingScreen extends ConsumerWidget {
           IconButton(
               iconSize: 38,
               icon: const Icon(Icons.skip_previous),
-              onPressed: pc.previous),
+              onPressed: _goPrev),
           const SizedBox(width: 10),
           GestureDetector(
             onTap: pc.togglePlay,
@@ -240,7 +276,7 @@ class NowPlayingScreen extends ConsumerWidget {
           IconButton(
               iconSize: 38,
               icon: const Icon(Icons.skip_next),
-              onPressed: pc.next),
+              onPressed: _goNext),
           const SizedBox(width: 10),
           IconButton(
               icon: Icon(
