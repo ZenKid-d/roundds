@@ -37,7 +37,17 @@ class Artwork extends StatelessWidget {
             height: size,
             fit: BoxFit.cover,
             placeholder: (_, __) => placeholder,
-            errorWidget: (_, __, ___) => placeholder,
+            // Если sddefault отсутствует — падаем на hqdefault, потом заглушка.
+            errorWidget: (isYtThumb && url!.contains('sddefault'))
+                ? (_, __, ___) => CachedNetworkImage(
+                      imageUrl: url!.replaceAll('sddefault', 'hqdefault'),
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => placeholder,
+                      errorWidget: (_, __, ___) => placeholder,
+                    )
+                : (_, __, ___) => placeholder,
           );
     if (isYtThumb) {
       // Приближаем по центру — обрезаем чёрные полосы прямоугольного превью.

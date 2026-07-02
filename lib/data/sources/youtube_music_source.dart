@@ -312,7 +312,7 @@ class YoutubeMusicSource implements MusicSource {
         r, ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
     if (thumbs is List && thumbs.isNotEmpty) {
       final url = _dig(thumbs.last, ['url'])?.toString();
-      art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w544-h544');
+      art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w720-h720');
     }
     art ??= ytArtwork(videoId);
 
@@ -729,10 +729,11 @@ class YoutubeMusicSource implements MusicSource {
     );
   }
 
-  /// URL превью YouTube по videoId. hqdefault есть всегда; чёрные полосы 4:3
+  /// URL превью YouTube по videoId. sddefault (640×480) заметно чётче
+  /// hqdefault и почти всегда доступен; та же геометрия 4:3 — чёрные полосы
   /// убираются зум-кропом в [Artwork].
   static String ytArtwork(String videoId) =>
-      'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+      'https://i.ytimg.com/vi/$videoId/sddefault.jpg';
 
   void dispose() => _yt.close();
 }
