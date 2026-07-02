@@ -20,10 +20,22 @@ class ArtistScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tracks = ref.watch(_artistTracksProvider(artist));
+    final following = ref.watch(libraryProvider).isFollowing(artist);
     return Scaffold(
       appBar: AppBar(
         title: Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: Icon(following ? Icons.notifications_active : Icons.notifications_none),
+            tooltip: following ? 'Вы подписаны' : 'Следить за артистом',
+            onPressed: () {
+              ref.read(libraryProvider).toggleFollow(artist);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(following
+                      ? 'Отписка от «$artist»'
+                      : 'Вы следите за «$artist»')));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.radio),
             tooltip: 'Радио по артисту',

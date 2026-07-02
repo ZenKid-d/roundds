@@ -12,6 +12,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
+import '../artist/artist_screen.dart';
 
 final _queryProvider = StateProvider<String>((ref) => '');
 final _filterProvider = StateProvider<SourceType?>((ref) => null);
@@ -211,13 +212,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       data: (tracks) {
         if (submitted.isEmpty) return _recentsOrHint();
         if (tracks.isEmpty) return _hint('Ничего не найдено.');
+        // Уникальные артисты из результатов (для перехода на их страницы).
+        final artists = <String>[];
+        final seen = <String>{};
+        for (final t in tracks) {
+          if (seen.add(t.artist.toLowerCase())) artists.add(t.artist);
+        }
         return ListView.builder(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: tracks.length,
-          itemBuilder: (_, i) => TrackRow(
-            track: tracks[i],
-            onTap: () => playTrack(ref, context, tracks[i], queue: tracks),
-          ),
+          itemCount: tracks.length + 1,
+          itemBuilder: (_, i) {
+            if (i == 0) return _artistsRow(artists);
+            final t = tracks[i - 1];
+            return TrackRow(
+              track: t,
+              onTap: () => playTrack(ref, context, t, queue: tracks),
+            );
+          },
         );
       },
     );
@@ -260,6 +271,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             onTap: () => _submit(q),
           ),
+      ],
+    );
+  }
+
+  Widget _artistsRow(List<String> artists) {
+    if (artists.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Text('Артисты',
+              style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.white60,
+                  fontWeight: FontWeight.w500)),
+        ),
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: artists.take(12).length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final a = artists[i];
+              return ActionChip(
+                avatar: const Icon(Icons.person, size: 16),
+                label: Text(a, style: const TextStyle(fontSize: 12.5)),
+                onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ArtistScreen(artist: a))),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 14),
       ],
     );
   }

@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_settings.dart';
 import '../../core/widgets/animated_bg.dart';
 import '../../core/widgets/artwork.dart';
+import '../../core/widgets/player_visualizer.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/vinyl_disc.dart';
@@ -140,7 +141,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 const SizedBox(height: 11),
                 ServicePill(track.source),
                 if (pc.error != null) _errorBox(context, ref, track, pc.error!),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: PlayerVisualizer(
+                      playing: pc.isPlaying, color: accent, height: 26),
+                ),
+                const SizedBox(height: 8),
                 _progress(context, ref, pc.duration),
                 _controls(context, ref, pc.isPlaying, pc.isLoading),
                 const SizedBox(height: 14),

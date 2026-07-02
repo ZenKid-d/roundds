@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
 import '../../data/recommendation_service.dart';
 import '../../domain/models/track.dart';
+import '../artist/followed_artists_screen.dart';
 import '../charts/charts_screen.dart';
 
 /// Лента главного экрана — микс из всех включённых источников.
@@ -76,6 +77,21 @@ class HomeScreen extends ConsumerWidget {
                   MaterialPageRoute(builder: (_) => const ChartsScreen())),
             ),
           ),
+          if (lib.followedArtists.isNotEmpty)
+            SliverToBoxAdapter(
+              child: ListTile(
+                leading:
+                    Icon(Icons.notifications_active, color: AppColors.white60),
+                title: const Text('Мои артисты'),
+                subtitle: Text(
+                    'Новинки от ${lib.followedArtists.length} артистов',
+                    style:
+                        TextStyle(color: AppColors.white45, fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const FollowedArtistsScreen())),
+              ),
+            ),
           if (history.isNotEmpty) ...[
             const _SectionHeader('Продолжить слушать'),
             SliverToBoxAdapter(child: _trackHRow(ref, context, history)),

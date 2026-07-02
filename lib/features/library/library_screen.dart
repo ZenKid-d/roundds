@@ -844,20 +844,48 @@ class _QueueView extends ConsumerWidget {
             style: TextStyle(color: AppColors.white45)),
       );
     }
-    return ReorderableListView.builder(
-      itemCount: queue.length,
-      onReorder: pc.reorderQueue,
-      itemBuilder: (_, i) {
-        final t = queue[i];
-        return TrackRow(
-          key: ValueKey(t.uid),
-          track: t,
-          active: t.uid == pc.current?.uid,
-          onTap: () => playTrack(ref, context, t, queue: queue,
-              openPlayer: false),
-          trailing: const Icon(Icons.drag_handle),
-        );
-      },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.playlist_add, size: 18),
+              label: const Text('Сохранить очередь как плейлист'),
+              onPressed: () async {
+                final name = await _askName(context, 'Новый плейлист',
+                    initial: 'Очередь');
+                if (name != null && name.isNotEmpty) {
+                  await ref.read(libraryProvider).importPlaylist(name, queue);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            'Сохранено: $name (${queue.length} треков)')));
+                  }
+                }
+              },
+            ),
+          ),
+        ),
+        Expanded(
+          child: ReorderableListView.builder(
+            itemCount: queue.length,
+            onReorder: pc.reorderQueue,
+            itemBuilder: (_, i) {
+              final t = queue[i];
+              return TrackRow(
+                key: ValueKey(t.uid),
+                track: t,
+                active: t.uid == pc.current?.uid,
+                onTap: () => playTrack(ref, context, t, queue: queue,
+                    openPlayer: false),
+                trailing: const Icon(Icons.drag_handle),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

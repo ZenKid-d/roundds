@@ -30,6 +30,23 @@ class LibraryController extends ChangeNotifier {
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
   List<Track> get liked => List.unmodifiable(_liked);
 
+  // --- Подписки на артистов ---
+  final List<String> _followed = []; // отображаемые имена, новые сверху
+  List<String> get followedArtists => List.unmodifiable(_followed);
+  bool isFollowing(String artist) =>
+      _followed.any((e) => e.toLowerCase() == artist.toLowerCase());
+  Future<void> toggleFollow(String artist) async {
+    final a = artist.trim();
+    if (a.isEmpty) return;
+    if (isFollowing(a)) {
+      _followed.removeWhere((e) => e.toLowerCase() == a.toLowerCase());
+    } else {
+      _followed.insert(0, a);
+    }
+    await _prefs.setStringList('followed_artists', _followed);
+    notifyListeners();
+  }
+
   // --- Чёрный список артистов ---
   List<String> get blacklistedArtists => _blacklist.toList()..sort();
   bool isArtistBlacklisted(String artist) =>
@@ -91,6 +108,9 @@ class LibraryController extends ChangeNotifier {
     _blacklist
       ..clear()
       ..addAll(_prefs.getStringList('blacklist_artists') ?? const []);
+    _followed
+      ..clear()
+      ..addAll(_prefs.getStringList('followed_artists') ?? const []);
     final s = _prefs.getString('stats');
     if (s != null) {
       for (final e in (jsonDecode(s) as List)) {
