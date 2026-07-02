@@ -25,6 +25,11 @@ Future<void> main() async {
   // чтобы UI и аудио-хендлер работали с одними источниками.
   final dio = buildAppDio();
   final youtube = YoutubeMusicSource(dio);
+  // Обход блокировок (РФ): включённость и свои зеркала.
+  youtube.configureBypass(
+    enabled: prefs.getBool('rf_bypass') ?? false,
+    instances: prefs.getStringList('rf_instances') ?? const [],
+  );
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);

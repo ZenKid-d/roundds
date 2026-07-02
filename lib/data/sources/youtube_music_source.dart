@@ -26,6 +26,126 @@ class YoutubeMusicSource implements MusicSource {
   static const _minSec = 45;
   static const _maxSec = 720;
 
+  // --- Обход блокировок (РФ): поиск/поток/радио через зеркала Piped ---
+  // Зеркало отдаёт ссылку на поток уже через свой сервер, поэтому плеер играет
+  // без VPN, если зеркало доступно. Свои зеркала (свой сервер) — в приоритете.
+
+  bool bypassEnabled = false;
+  final List<String> _userInstances = [];
+
+  static const List<String> _defaultInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.leptons.xyz',
+    'https://pipedapi.reallyaweso.me',
+    'https://api.piped.private.coffee',
+    'https://pipedapi.nosebs.ru',
+  ];
+
+  /// Настраивает обход: вкл/выкл и список своих зеркал (в приоритете).
+  void configureBypass({required bool enabled, List<String>? instances}) {
+    bypassEnabled = enabled;
+    if (instances != null) {
+      _userInstances
+        ..clear()
+        ..addAll(instances
+            .map((e) => e.trim().replaceAll(RegExp(r'/+$'), ''))
+            .where((e) => e.isNotEmpty));
+    }
+  }
+
+  List<String> get userInstances => List.unmodifiable(_userInstances);
+
+  // Свои зеркала — первыми, затем встроенные.
+  List<String> _instances() => [..._userInstances, ..._defaultInstances];
+
+  Track? _pipedItemToTrack(Map it) {
+    final url = it['url'] as String?; // '/watch?v=ID'
+    if (url == null) return null;
+    final id = RegExp(r'v=([A-Za-z0-9_-]{11})').firstMatch(url)?.group(1);
+    if (id == null) return null;
+    var artist = (it['uploaderName'] ?? 'YouTube').toString();
+    const topic = ' - Topic';
+    if (artist.endsWith(topic)) {
+      artist = artist.substring(0, artist.length - topic.length);
+    }
+    final dur = it['duration'];
+    final duration = (dur is int && dur > 0) ? Duration(seconds: dur) : null;
+    final thumb = it['thumbnail'] as String?;
+    return Track(
+      id: id,
+      title: (it['title'] ?? '').toString(),
+      artist: artist,
+      // Обложку берём с зеркала (грузится без обхода), иначе превью YouTube.
+      artworkUrl: (thumb != null && thumb.isNotEmpty) ? thumb : ytArtwork(id),
+      duration: duration,
+      source: SourceType.youtube,
+    );
+  }
+
+  Future<List<Track>> _pipedSearch(String query, {int limit = 20}) async {
+    for (final base in _instances()) {
+      try {
+        final r = await _dio.get('$base/search',
+            queryParameters: {'q': query, 'filter': 'music_songs'},
+            options: Options(receiveTimeout: const Duration(seconds: 12)));
+        final items = (r.data['items'] as List?) ?? [];
+        final out = <Track>[];
+        final seen = <String>{};
+        for (final it in items) {
+          if (it is! Map) continue;
+          final t = _pipedItemToTrack(it);
+          if (t != null && seen.add(t.id)) out.add(t);
+          if (out.length >= limit) break;
+        }
+        if (out.isNotEmpty) return out;
+      } catch (_) {/* следующее зеркало */}
+    }
+    return const [];
+  }
+
+  Future<List<Track>> _pipedRelated(String videoId, {int limit = 40}) async {
+    for (final base in _instances()) {
+      try {
+        final r = await _dio.get('$base/streams/$videoId',
+            options: Options(receiveTimeout: const Duration(seconds: 12)));
+        final items = (r.data['relatedStreams'] as List?) ?? [];
+        final out = <Track>[];
+        final seen = <String>{videoId};
+        for (final it in items) {
+          if (it is! Map) continue;
+          if (it['type'] != null && it['type'] != 'stream') continue;
+          final t = _pipedItemToTrack(it);
+          if (t != null && seen.add(t.id)) out.add(t);
+          if (out.length >= limit) break;
+        }
+        if (out.isNotEmpty) return out;
+      } catch (_) {/* следующее зеркало */}
+    }
+    return const [];
+  }
+
+  Future<PlayableStream?> _resolveViaPiped(String videoId) async {
+    for (final base in _instances()) {
+      try {
+        final r = await _dio.get('$base/streams/$videoId',
+            options: Options(receiveTimeout: const Duration(seconds: 12)));
+        final audio = (r.data['audioStreams'] as List?) ?? [];
+        if (audio.isEmpty) continue;
+        audio.sort((a, b) => ((b['bitrate'] ?? 0) as num)
+            .compareTo((a['bitrate'] ?? 0) as num));
+        final url = (audio.first as Map)['url'] as String?;
+        if (url != null && url.isNotEmpty) {
+          return PlayableStream(
+            uri: Uri.parse(url),
+            expiresAt: DateTime.now().add(const Duration(hours: 3)),
+          );
+        }
+      } catch (_) {/* следующее зеркало */}
+    }
+    return null;
+  }
+
   @override
   SourceType get type => SourceType.youtube;
 
@@ -34,6 +154,11 @@ class YoutubeMusicSource implements MusicSource {
 
   @override
   Future<List<Track>> search(String query, {int limit = 20}) async {
+    // В режиме обхода (РФ) сначала ищем через зеркало Piped.
+    if (bypassEnabled) {
+      final viaPiped = await _pipedSearch(query, limit: limit);
+      if (viaPiped.isNotEmpty) return viaPiped;
+    }
     // Приоритет — поиск YouTube Music (фильтр «Songs»): только музыка, с
     // квадратными обложками альбомов. Если он недоступен — обычный поиск
     // YouTube с фильтром по длительности.
@@ -200,10 +325,11 @@ class YoutubeMusicSource implements MusicSource {
   Future<List<Track>> feed({int limit = 20}) async {
     const seeds = ['Top hits 2025', 'Trending music', 'New music this week'];
     final out = <Track>[];
+    final per = (limit / seeds.length).ceil();
     for (final s in seeds) {
       try {
-        final r = await _yt.search.search(s);
-        out.addAll(_onlyMusic(r).take((limit / seeds.length).ceil()));
+        // Через search(): в режиме обхода источник — зеркало Piped.
+        out.addAll(await search(s, limit: per));
       } catch (_) {/* пропускаем неудачный сид */}
       if (out.length >= limit) break;
     }
@@ -212,6 +338,12 @@ class YoutubeMusicSource implements MusicSource {
 
   @override
   Future<PlayableStream> resolveStream(Track track) async {
+    // В режиме обхода (РФ) поток берём через зеркало Piped (проксируется им).
+    if (bypassEnabled) {
+      final viaPiped = await _resolveViaPiped(track.id);
+      if (viaPiped != null) return viaPiped;
+      // Зеркала не смогли — пробуем напрямую (вдруг сработает).
+    }
     try {
       StreamManifest manifest;
       try {
@@ -249,6 +381,11 @@ class YoutubeMusicSource implements MusicSource {
   /// Похожие треки (радио) для YouTube-трека через InnerTube `next`. Это
   /// настоящая авто-очередь YouTube Music, а не подбор по артисту.
   Future<List<Track>> relatedTo(String videoId, {int limit = 40}) async {
+    // В режиме обхода (РФ) похожие берём из relatedStreams зеркала Piped.
+    if (bypassEnabled) {
+      final viaPiped = await _pipedRelated(videoId, limit: limit);
+      if (viaPiped.isNotEmpty) return viaPiped;
+    }
     await _ensureMusicKeys();
     if (_musicKey == null) return const [];
     final resp = await _dio.post(
