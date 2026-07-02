@@ -114,40 +114,58 @@ class DownloadsController extends ChangeNotifier {
     return ok;
   }
 
-  /// Скачать весь плейлист. Каждый трек — до 3 попыток, чтобы временные сбои
-  /// сети/потока не приводили к пропуску. Уведомление — одно, в конце.
+  /// Скачать весь плейлист. Треки качаются ПАРАЛЛЕЛЬНО (пул воркеров) — это
+  /// заметно быстрее последовательной загрузки. Каждый трек — до 3 попыток,
+  /// чтобы временные сбои не приводили к пропуску. Прогресс — в постоянном
+  /// уведомлении и в UI; итог — одним уведомлением.
+  static const int _dlNotifId = 1;
+  static const int _dlConcurrency = 4;
+
   Future<void> downloadPlaylist(String name, List<Track> tracks) async {
     if (_playlistBusy || tracks.isEmpty) return;
     _playlistBusy = true;
     _playlistName = name;
     _playlistProgress = 0;
     notifyListeners();
-    var done = 0;
+
+    final total = tracks.length;
+    final queue = tracks.where((t) => !isDownloaded(t.uid)).toList();
+    var done = total - queue.length; // уже скачанные засчитываем сразу
     var failed = 0;
-    for (final t in tracks) {
-      if (!isDownloaded(t.uid)) {
+
+    _playlistProgress = total == 0 ? 1 : done / total;
+    notifyListeners();
+    await _notif.showProgress('Скачивание: $name', '$done / $total',
+        progress: done, max: total, id: _dlNotifId);
+
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
+        final t = queue.removeAt(0); // атомарно между await'ами
         var ok = false;
         for (var attempt = 0; attempt < 3 && !ok; attempt++) {
           ok = await download(t, notify: false);
-          if (!ok) {
-            await Future.delayed(const Duration(milliseconds: 500));
-          }
+          if (!ok) await Future.delayed(const Duration(milliseconds: 500));
         }
         if (!ok) failed++;
+        done++;
+        _playlistProgress = done / total;
+        notifyListeners();
+        await _notif.showProgress('Скачивание: $name', '$done / $total',
+            progress: done, max: total, id: _dlNotifId);
       }
-      done++;
-      _playlistProgress = done / tracks.length;
-      notifyListeners();
     }
+
+    final workers = queue.length < _dlConcurrency ? queue.length : _dlConcurrency;
+    await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+
     _playlistBusy = false;
     _playlistName = null;
     _playlistProgress = 0;
     notifyListeners();
-    final total = tracks.length;
     final body = failed == 0
         ? '$name · $total треков'
         : '$name · скачано ${total - failed}, не удалось $failed';
-    await _notif.show('Плейлист скачан', body, id: 1);
+    await _notif.show('Плейлист скачан', body, id: _dlNotifId);
   }
 
   /// Суммарный размер скачанных файлов, в байтах.

@@ -14,8 +14,16 @@ final currentArtworkProvider = Provider<String?>((ref) {
   return ref.watch(playbackProvider).current?.artworkUrl;
 });
 
-/// Итоговый акцент с учётом режима: динамический из обложки / пресет / свой.
+/// Есть ли активная ошибка воспроизведения (трек не играет). Значение —
+/// bool, поэтому тема перестраивается только при переключении ошибки.
+final playbackErrorProvider = Provider<bool>((ref) {
+  return ref.watch(playbackProvider).error != null;
+});
+
+/// Итоговый акцент с учётом режима: при ошибке — жёлтый; иначе динамический
+/// из обложки / пресет / свой.
 final effectiveAccentProvider = Provider<Color>((ref) {
+  if (ref.watch(playbackErrorProvider)) return AppColors.warning;
   final ts = ref.watch(themeSettingsProvider);
   switch (ts.accentMode) {
     case AccentMode.dynamic:

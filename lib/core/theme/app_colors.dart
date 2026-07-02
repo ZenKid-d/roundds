@@ -20,6 +20,9 @@ class AppColors {
   /// Акцент по умолчанию (пока нет обложки текущего трека).
   static const defaultAccent = Color(0xFFB388FF);
 
+  /// Жёлтый «что-то не так» — акцент при ошибке (трек не играет и т.п.).
+  static const warning = Color(0xFFFFD23F);
+
   // Цвета сервисов (используются и в SourceType).
   static const youtube = Color(0xFFFF0000);
   static const soundcloud = Color(0xFFFF5500);
