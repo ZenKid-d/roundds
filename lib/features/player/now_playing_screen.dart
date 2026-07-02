@@ -14,7 +14,6 @@ import '../../domain/models/track.dart';
 import '../../playback/audio_handler.dart';
 import '../artist/artist_screen.dart';
 import 'equalizer_screen.dart';
-import 'karaoke_screen.dart';
 import 'lyrics_screen.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
@@ -401,15 +400,6 @@ class NowPlayingScreen extends ConsumerWidget {
                     .read(recommendationServiceProvider)
                     .radioFrom(track);
                 await ref.read(playbackProvider).startRadio(track, list);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.mic_external_on),
-              title: const Text('Караоке'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => KaraokeScreen(track: track)));
               },
             ),
             ListTile(
