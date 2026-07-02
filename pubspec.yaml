@@ -1,7 +1,7 @@
 name: roundds
 description: "Roundds — единый плеер музыки из разных источников (YouTube Music, SoundCloud, Яндекс Музыка)."
 publish_to: "none"
-version: 0.2.4+6
+version: 0.2.5+7
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -33,6 +33,7 @@ dependencies:
 
   # Images
   cached_network_image: ^3.3.1
+  flutter_cache_manager: ^3.4.1
 
   # Brand icons (логотипы сервисов)
   font_awesome_flutter: ^11.0.0

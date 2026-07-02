@@ -33,7 +33,7 @@ Future<void> main() async {
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);
-  final reco = RecommendationService(soundcloud, yandex, aggregator);
+  final reco = RecommendationService(youtube, soundcloud, yandex, aggregator);
 
   // Фоновое воспроизведение + уведомление + управление с локскрина.
   final handler = await AudioService.init(

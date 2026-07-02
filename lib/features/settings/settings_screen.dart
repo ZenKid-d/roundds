@@ -15,6 +15,7 @@ import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
 import 'appearance_screen.dart';
+import 'storage_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -103,6 +104,16 @@ class SettingsScreen extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const StatsScreen())),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.sd_storage_outlined),
+          title: const Text('Управление памятью'),
+          subtitle: Text('Загрузки, кэш, очистка',
+              style: TextStyle(color: AppColors.white45, fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StorageScreen())),
         ),
         const SizedBox(height: 16),
         const _Header('Обновление'),

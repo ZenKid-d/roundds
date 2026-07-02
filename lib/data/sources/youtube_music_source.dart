@@ -246,6 +246,81 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
+  /// Похожие треки (радио) для YouTube-трека через InnerTube `next`. Это
+  /// настоящая авто-очередь YouTube Music, а не подбор по артисту.
+  Future<List<Track>> relatedTo(String videoId, {int limit = 40}) async {
+    await _ensureMusicKeys();
+    if (_musicKey == null) return const [];
+    final resp = await _dio.post(
+      'https://music.youtube.com/youtubei/v1/next',
+      queryParameters: {'key': _musicKey},
+      data: {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': _musicVer,
+            'hl': 'en',
+            'gl': 'US',
+          }
+        },
+        'enablePersistentPlaylistPanel': true,
+        'isAudioOnly': true,
+        'videoId': videoId,
+        'playlistId': 'RDAMVM$videoId',
+      },
+      options: Options(headers: {
+        'User-Agent': _ua,
+        'Content-Type': 'application/json',
+        'Origin': 'https://music.youtube.com',
+        'Referer': 'https://music.youtube.com/',
+      }),
+    );
+    final out = <Track>[];
+    final seen = <String>{videoId}; // сам сид не добавляем
+    void walk(dynamic n) {
+      if (out.length >= limit) return;
+      if (n is Map) {
+        final r = n['playlistPanelVideoRenderer'];
+        if (r is Map) {
+          final t = _panelToTrack(r);
+          if (t != null && seen.add(t.id)) out.add(t);
+        }
+        for (final v in n.values) {
+          walk(v);
+        }
+      } else if (n is List) {
+        for (final v in n) {
+          walk(v);
+        }
+      }
+    }
+
+    walk(resp.data);
+    return out;
+  }
+
+  Track? _panelToTrack(Map r) {
+    final videoId = _dig(r, ['videoId']) as String?;
+    final title = _dig(r, ['title', 'runs', 0, 'text']) as String?;
+    if (videoId == null || title == null) return null;
+    var artist =
+        (_dig(r, ['longBylineText', 'runs', 0, 'text']) ?? 'YouTube').toString();
+    const topic = ' - Topic';
+    if (artist.endsWith(topic)) {
+      artist = artist.substring(0, artist.length - topic.length);
+    }
+    final duration =
+        _parseClockDuration(_dig(r, ['lengthText', 'runs', 0, 'text'])?.toString());
+    return Track(
+      id: videoId,
+      title: title,
+      artist: artist,
+      artworkUrl: ytArtwork(videoId),
+      duration: duration,
+      source: SourceType.youtube,
+    );
+  }
+
   /// Импорт плейлиста по ссылке/ID. Тянем напрямую из ytInitialData + InnerTube
   /// континуаций (как делает сам сайт YouTube). Разбираем текущую схему
   /// `lockupViewModel` — старая `playlistVideoRenderer` YouTube больше не

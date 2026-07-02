@@ -132,6 +132,32 @@ class DownloadsController extends ChangeNotifier {
         id: 1);
   }
 
+  /// Суммарный размер скачанных файлов, в байтах.
+  Future<int> downloadsBytes() async {
+    var total = 0;
+    for (final p in _paths.values) {
+      try {
+        final f = File(p);
+        if (f.existsSync()) total += await f.length();
+      } catch (_) {}
+    }
+    return total;
+  }
+
+  /// Удаляет все скачанные треки и их файлы.
+  Future<void> removeAll() async {
+    for (final p in _paths.values) {
+      try {
+        final f = File(p);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+    _tracks.clear();
+    _paths.clear();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> remove(String uid) async {
     final p = _paths[uid];
     if (p != null) {
