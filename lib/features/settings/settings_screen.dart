@@ -791,18 +791,38 @@ class _DataSaverTile extends ConsumerStatefulWidget {
 class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
   @override
   Widget build(BuildContext context) {
-    final on = ref.read(prefsProvider).getBool('data_saver') ?? false;
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      value: on,
-      title: const Text('Экономия трафика'),
-      subtitle: Text('Поток в низком битрейте (меньше данных, тише качество)',
-          style: TextStyle(color: AppColors.white45, fontSize: 11)),
-      onChanged: (v) {
-        ref.read(prefsProvider).setBool('data_saver', v);
-        ref.read(youtubeSourceProvider).preferLowBitrate = v;
-        setState(() {});
-      },
+    final prefs = ref.read(prefsProvider);
+    final q = prefs.getInt('stream_quality') ??
+        ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
+    const labels = ['Низкое', 'Среднее', 'Высокое'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 6, bottom: 2),
+          child: Text('Качество звука', style: TextStyle(fontSize: 16)),
+        ),
+        Text('Битрейт потока и загрузок',
+            style: TextStyle(color: AppColors.white45, fontSize: 11)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (var i = 0; i < 3; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(labels[i]),
+                  selected: q == i,
+                  onSelected: (_) {
+                    prefs.setInt('stream_quality', i);
+                    ref.read(youtubeSourceProvider).streamQuality = i;
+                    setState(() {});
+                  },
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

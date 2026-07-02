@@ -33,8 +33,8 @@ class YoutubeMusicSource implements MusicSource {
   bool bypassEnabled = false;
   final List<String> _userInstances = [];
 
-  /// Экономия трафика: выбирать поток с низким битрейтом.
-  bool preferLowBitrate = false;
+  /// Качество потока/загрузки: 0 — низкое, 1 — среднее, 2 — высокое.
+  int streamQuality = 2;
 
   static const List<String> _defaultInstances = [
     'https://pipedapi.kavin.rocks',
@@ -135,10 +135,14 @@ class YoutubeMusicSource implements MusicSource {
             options: Options(receiveTimeout: const Duration(seconds: 12)));
         final audio = (r.data['audioStreams'] as List?) ?? [];
         if (audio.isEmpty) continue;
-        // По убыванию битрейта; для экономии трафика берём последний (низкий).
+        // По убыванию битрейта; выбираем по качеству.
         audio.sort((a, b) => ((b['bitrate'] ?? 0) as num)
             .compareTo((a['bitrate'] ?? 0) as num));
-        final chosen = (preferLowBitrate ? audio.last : audio.first) as Map;
+        final chosen = (streamQuality == 0
+            ? audio.last
+            : streamQuality == 1
+                ? audio[audio.length ~/ 2]
+                : audio.first) as Map;
         final url = chosen['url'] as String?;
         if (url != null && url.isNotEmpty) {
           return PlayableStream(
@@ -376,8 +380,13 @@ class YoutubeMusicSource implements MusicSource {
         final list = manifest.audioOnly.toList()
           ..sort((a, b) =>
               a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-        // Экономия трафика — самый низкий битрейт, иначе самый высокий.
-        url = (preferLowBitrate ? list.first : list.last).url;
+        // По качеству: низкое — первый, среднее — середина, высокое — последний.
+        final sel = streamQuality == 0
+            ? list.first
+            : streamQuality == 1
+                ? list[list.length ~/ 2]
+                : list.last;
+        url = sel.url;
       } else {
         url = manifest.muxed.withHighestBitrate().url;
       }

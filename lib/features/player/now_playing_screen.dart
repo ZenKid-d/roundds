@@ -80,7 +80,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                       onVerticalDragEnd: (d) {
                         if ((d.primaryVelocity ?? 0) > 300) context.pop();
                       },
-                      child: AnimatedSwitcher(
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          AnimatedSwitcher(
                         duration: const Duration(milliseconds: 420),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
@@ -117,6 +120,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                   size: 250,
                                 ),
                         ),
+                      ),
+                          if (ts.playerView != PlayerView.cover)
+                            Positioned.fill(
+                              child: TonearmOverlay(
+                                  playing: pc.isPlaying, accent: accent)),
+                        ],
                       ),
                     ),
                   ),

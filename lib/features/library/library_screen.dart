@@ -195,6 +195,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 title: const Text('Из Яндекса (мои плейлисты)'),
                 onTap: () => Navigator.pop(context, 'yandex')),
             ListTile(
+                leading: const Icon(Icons.format_list_bulleted),
+                title: const Text('Из списка (текст)'),
+                subtitle: Text('«Артист — Трек» построчно',
+                    style: TextStyle(color: AppColors.white45, fontSize: 11)),
+                onTap: () => Navigator.pop(context, 'list')),
+            ListTile(
                 leading: const Icon(Icons.folder_open),
                 title: const Text('Из файла (.json)'),
                 onTap: () => Navigator.pop(context, 'file')),
@@ -210,6 +216,65 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await _importYandex();
     } else if (src == 'file') {
       await _importPlaylistFile();
+    } else if (src == 'list') {
+      await _importFromList();
+    }
+  }
+
+  Future<void> _importFromList() async {
+    final ctrl = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface2,
+        title: const Text('Импорт по списку'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            hintText: 'Eminem — Lose Yourself\nThe Weeknd — Blinding Lights\n…',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text),
+              child: const Text('Найти')),
+        ],
+      ),
+    );
+    if (text == null || text.trim().isEmpty) return;
+    final lines = text
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return;
+    _showLoading();
+    final tracks = <Track>[];
+    try {
+      for (final line in lines) {
+        try {
+          final r = await ref.read(aggregatorProvider).search(line);
+          if (r.isNotEmpty) tracks.add(r.first);
+        } catch (_) {}
+      }
+    } finally {
+      if (mounted) Navigator.pop(context); // индикатор
+    }
+    if (tracks.isEmpty) {
+      _snack('Ничего не найдено по списку');
+      return;
+    }
+    if (!mounted) return;
+    final name = await _askName(context, 'Название плейлиста',
+        initial: 'Мой список');
+    if (name != null && name.isNotEmpty) {
+      await ref.read(libraryProvider).importPlaylist(name, tracks);
+      _snack('Импортировано: ${tracks.length} из ${lines.length}');
     }
   }
 

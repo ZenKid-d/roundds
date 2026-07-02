@@ -42,17 +42,12 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   @override
   void initState() {
     super.initState();
-    if (widget.playing) _c.repeat();
+    _c.repeat(); // анимируем всегда — и при игре, и на паузе
   }
 
   @override
   void didUpdateWidget(covariant PlayerVisualizer old) {
     super.didUpdateWidget(old);
-    if (widget.playing && !_c.isAnimating) {
-      _c.repeat();
-    } else if (!widget.playing && _c.isAnimating) {
-      _c.stop();
-    }
     _apply();
   }
 
@@ -111,8 +106,11 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
       final idx = (i * _smooth.length / widget.bars).floor().clamp(0, _smooth.length - 1);
       return _smooth[idx];
     }
-    if (!widget.playing) return 0.14;
     final t = _c.value * 2 * pi;
+    if (!widget.playing) {
+      // На паузе — спокойная «дышащая» волна низкой амплитуды.
+      return (0.16 + 0.11 * sin(t * 0.8 + i * 0.45)).clamp(0.05, 0.34);
+    }
     return (0.5 + 0.5 * sin(t + i * 0.5) * sin(t * 0.7 + i * 0.28).abs())
         .clamp(0.0, 1.0);
   }

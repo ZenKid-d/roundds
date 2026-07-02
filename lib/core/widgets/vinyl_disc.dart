@@ -57,70 +57,79 @@ class _VinylDiscState extends State<VinylDisc>
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
+    // Только диск (пластинка + обложка). Тонарм рисуется отдельным постоянным
+    // слоем [TonearmOverlay] поверх — чтобы при смене трека менялась только
+    // пластинка, а игла оставалась на месте.
     return RepaintBoundary(
-      child: SizedBox(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
         width: s,
         height: s,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black,
-                  boxShadow: [
-                    BoxShadow(
-                      color: widget.accent
-                          .withValues(alpha: widget.isPlaying ? 0.45 : 0.22),
-                      blurRadius: 46,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: RotationTransition(
-                  turns: _c,
-                  // Диск растеризуется в слой один раз — вращение дешёвое.
-                  child: RepaintBoundary(
-                    child: ClipOval(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Artwork(widget.artworkUrl,
-                              size: s, radius: 999, seed: widget.seed),
-                          Center(
-                            child: Container(
-                              width: s * 0.05,
-                              height: s * 0.05,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.black,
-                                border:
-                                    Border.all(color: Colors.white38, width: 2),
-                              ),
-                            ),
-                          ),
-                        ],
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black,
+          boxShadow: [
+            BoxShadow(
+              color: widget.accent
+                  .withValues(alpha: widget.isPlaying ? 0.45 : 0.22),
+              blurRadius: 46,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: RotationTransition(
+          turns: _c,
+          child: RepaintBoundary(
+            child: ClipOval(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Artwork(widget.artworkUrl,
+                      size: s, radius: 999, seed: widget.seed),
+                  Center(
+                    child: Container(
+                      width: s * 0.05,
+                      height: s * 0.05,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black,
+                        border: Border.all(color: Colors.white38, width: 2),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-            // Тонарм с иглой: опускается на пластинку при игре, поднят на паузе.
-            Positioned.fill(
-              child: IgnorePointer(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(end: widget.isPlaying ? 1.0 : 0.0),
-                  duration: const Duration(milliseconds: 650),
-                  curve: Curves.easeOut,
-                  builder: (_, t, __) => CustomPaint(
-                    painter: _TonearmPainter(t: t, accent: widget.accent),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Постоянный слой тонарма с иглой (не пересобирается при смене пластинки).
+/// Игла опускается при игре / поднимается на паузе и ПЛАВНО меняет цвет вслед
+/// за динамическим акцентом.
+class TonearmOverlay extends StatelessWidget {
+  const TonearmOverlay(
+      {super.key, required this.playing, required this.accent});
+  final bool playing;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: TweenAnimationBuilder<Color?>(
+        tween: ColorTween(end: accent),
+        duration: const Duration(milliseconds: 700),
+        builder: (_, color, __) => TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: playing ? 1.0 : 0.0),
+          duration: const Duration(milliseconds: 650),
+          curve: Curves.easeOut,
+          builder: (_, t, __) => CustomPaint(
+            size: Size.infinite,
+            painter: _TonearmPainter(t: t, accent: color ?? accent),
+          ),
         ),
       ),
     );
