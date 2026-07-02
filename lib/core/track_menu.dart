@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'providers.dart';
+import 'share_card.dart';
 import 'theme/app_colors.dart';
 import 'widgets/artwork.dart';
 import '../domain/models/track.dart';
@@ -94,6 +95,14 @@ Future<void> showTrackMenu(
               },
             );
           }),
+          ListTile(
+            leading: const Icon(Icons.ios_share),
+            title: const Text('Поделиться карточкой'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              shareTrackCard(context, ref, track);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.block, size: 22),
             title: Text('Скрыть артиста «${track.artist}»'),

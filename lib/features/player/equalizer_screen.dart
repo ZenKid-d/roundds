@@ -1,9 +1,24 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
+
+/// Встроенные пресеты как 5-точечные профили (дБ), интерполируются под число
+/// полос устройства.
+const _builtinPresets = <String, List<double>>{
+  'Плоский': [0, 0, 0, 0, 0],
+  'Бас-буст': [7, 4, 0, 1, 2],
+  'Вокал': [-2, 0, 3, 3, 1],
+  'Рок': [5, 2, -1, 2, 4],
+  'Поп': [2, 3, 1, 0, 1],
+  'Джаз': [3, 1, 0, 1, 3],
+  'Классика': [4, 2, 0, 2, 3],
+  'Высокие': [0, 0, 0, 3, 6],
+};
 
 class EqualizerScreen extends ConsumerStatefulWidget {
   const EqualizerScreen({super.key});
@@ -20,6 +35,71 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
   void initState() {
     super.initState();
     _enabled = _eq.enabled;
+  }
+
+  List<MapEntry<String, List<double>>> get _customPresets {
+    final raw = ref.read(prefsProvider).getStringList('eq_presets') ?? const [];
+    return raw.map((e) {
+      final m = jsonDecode(e) as Map<String, dynamic>;
+      return MapEntry(
+          m['name'] as String,
+          (m['gains'] as List).map((x) => (x as num).toDouble()).toList());
+    }).toList();
+  }
+
+  void _applyProfile(AndroidEqualizerParameters params, List<double> p) {
+    final bands = params.bands;
+    final n = bands.length;
+    for (var i = 0; i < n; i++) {
+      final x = n == 1 ? 0.0 : i * (p.length - 1) / (n - 1);
+      final lo = x.floor().clamp(0, p.length - 1);
+      final hi = x.ceil().clamp(0, p.length - 1);
+      final frac = x - lo;
+      final g = (p[lo] * (1 - frac) + p[hi] * frac)
+          .clamp(params.minDecibels, params.maxDecibels);
+      bands[i].setGain(g);
+    }
+    _eq.setEnabled(true);
+    setState(() => _enabled = true);
+  }
+
+  Future<void> _saveCurrent(AndroidEqualizerParameters params) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) {
+        final c = TextEditingController();
+        return AlertDialog(
+          backgroundColor: AppColors.surface2,
+          title: const Text('Сохранить пресет'),
+          content: TextField(
+              controller: c,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'Название')),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, c.text.trim()),
+                child: const Text('Сохранить')),
+          ],
+        );
+      },
+    );
+    if (name == null || name.isEmpty) return;
+    final gains = params.bands.map((b) => b.gain).toList();
+    final list = ref.read(prefsProvider).getStringList('eq_presets') ?? [];
+    list.add(jsonEncode({'name': name, 'gains': gains}));
+    await ref.read(prefsProvider).setStringList('eq_presets', list);
+    setState(() {});
+  }
+
+  Future<void> _deleteCustom(String name) async {
+    final list = (ref.read(prefsProvider).getStringList('eq_presets') ?? [])
+        .where((e) => (jsonDecode(e) as Map)['name'] != name)
+        .toList();
+    await ref.read(prefsProvider).setStringList('eq_presets', list);
+    setState(() {});
   }
 
   @override
@@ -59,9 +139,46 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
                   );
                 }
                 final params = snap.data!;
+                final custom = _customPresets;
                 return ListView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Text('Пресеты',
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.white60)),
+                    ),
+                    SizedBox(
+                      height: 38,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
+                          for (final e in _builtinPresets.entries)
+                            _PresetChip(
+                              label: e.key,
+                              onTap: () => _applyProfile(params, e.value),
+                            ),
+                          for (final e in custom)
+                            _PresetChip(
+                              label: e.key,
+                              custom: true,
+                              onTap: () => _applyProfile(params, e.value),
+                              onLong: () => _deleteCustom(e.key),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: ActionChip(
+                              avatar: const Icon(Icons.add, size: 16),
+                              label: const Text('Сохранить'),
+                              onPressed: () => _saveCurrent(params),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 18),
                     for (final band in params.bands)
                       _BandRow(
                         band: band,
@@ -75,6 +192,37 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.onTap,
+    this.onLong,
+    this.custom = false,
+  });
+  final String label;
+  final VoidCallback onTap;
+  final VoidCallback? onLong;
+  final bool custom;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onLongPress: onLong,
+        child: ActionChip(
+          avatar: custom
+              ? Icon(Icons.person, size: 15, color: accent)
+              : null,
+          label: Text(label),
+          onPressed: onTap,
+        ),
       ),
     );
   }

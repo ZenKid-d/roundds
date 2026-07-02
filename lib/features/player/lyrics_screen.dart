@@ -29,6 +29,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   final _scroll = ScrollController();
   bool _translate = false;
   final Map<int, String> _tr = {}; // перевод по индексу строки
+  int _offsetMs = 0; // ручная подстройка синхронизации
 
   @override
   void initState() {
@@ -98,6 +99,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
             child: Column(
               children: [
                 _topBar(),
+                if (!_loading && _lines.isNotEmpty) _syncBar(),
                 Expanded(child: _body(accent)),
                 if (!_loading &&
                     _lyrics != null &&
@@ -135,6 +137,42 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
         ],
       );
 
+  // Тонкая панель подстройки синхронизации текста (± шаг 0.3 с).
+  Widget _syncBar() {
+    final off = (_offsetMs / 1000).toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Синхрон',
+              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5))),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.remove, size: 18, color: Colors.white70),
+            onPressed: () => setState(() => _offsetMs -= 300),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text('${_offsetMs > 0 ? '+' : ''}$off с',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.white)),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add, size: 18, color: Colors.white70),
+            onPressed: () => setState(() => _offsetMs += 300),
+          ),
+          if (_offsetMs != 0)
+            TextButton(
+              onPressed: () => setState(() => _offsetMs = 0),
+              child: const Text('Сброс', style: TextStyle(fontSize: 12)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _body(Color accent) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_lyrics == null || _lyrics!.isEmpty) {
@@ -154,8 +192,9 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   // Синхронный «караоке»: центрированные строки с плавной подсветкой.
   Widget _synced(Color accent) {
     return Consumer(builder: (context, ref, _) {
-      final pos = ref.watch(positionProvider).value ??
+      final rawPos = ref.watch(positionProvider).value ??
           ref.read(playbackProvider).position;
+      final pos = rawPos - Duration(milliseconds: _offsetMs);
       final idx = _lineFor(pos);
       if (idx != _active) {
         _active = idx;
