@@ -84,12 +84,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
                         transitionBuilder: (child, anim) {
-                          // Новая пластинка «въезжает» со стороны переключения,
-                          // старая уезжает и слегка поворачивается — смена винила.
+                          // «Подъём иглы»: старая пластинка приподнимается и
+                          // уходит вверх, новая поднимается снизу. Без поворота.
                           final incoming = child.key == ValueKey(track.uid);
                           final dir = incoming ? _dir : -_dir;
                           final slide = Tween<Offset>(
-                            begin: Offset(0.6 * dir, 0.12),
+                            begin: Offset(0, 0.5 * dir),
                             end: Offset.zero,
                           ).animate(anim);
                           return FadeTransition(
@@ -98,12 +98,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                               position: slide,
                               child: ScaleTransition(
                                 scale:
-                                    Tween(begin: 0.9, end: 1.0).animate(anim),
-                                child: RotationTransition(
-                                  turns: Tween(begin: -0.04 * dir, end: 0.0)
-                                      .animate(anim),
-                                  child: child,
-                                ),
+                                    Tween(begin: 0.92, end: 1.0).animate(anim),
+                                child: child,
                               ),
                             ),
                           );
