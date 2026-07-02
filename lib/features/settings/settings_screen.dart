@@ -212,6 +212,9 @@ class SettingsScreen extends ConsumerWidget {
         ),
         _AutoDlLikesTile(),
         const SizedBox(height: 16),
+        const _Header('Last.fm'),
+        const _Lastfm(),
+        const SizedBox(height: 16),
         const _Header('Обновление'),
         const _UpdateTile(),
         const SizedBox(height: 24),
@@ -611,6 +614,116 @@ class _RfBypassState extends ConsumerState<_RfBypass> {
               ),
             ),
         ],
+      ],
+    );
+  }
+}
+
+class _Lastfm extends ConsumerStatefulWidget {
+  const _Lastfm();
+  @override
+  ConsumerState<_Lastfm> createState() => _LastfmState();
+}
+
+class _LastfmState extends ConsumerState<_Lastfm> {
+  final _key = TextEditingController();
+  final _secret = TextEditingController();
+  final _user = TextEditingController();
+  final _pass = TextEditingController();
+  bool _busy = false;
+  String? _msg;
+
+  @override
+  void dispose() {
+    _key.dispose();
+    _secret.dispose();
+    _user.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    final svc = ref.read(lastfmServiceProvider);
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    await svc.saveCredentials(_key.text, _secret.text);
+    final ok = await svc.login(_user.text, _pass.text);
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _msg = ok ? null : 'Не удалось войти — проверьте ключ/логин/пароль';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = ref.watch(lastfmServiceProvider);
+    if (svc.enabled) {
+      return Row(
+        children: [
+          const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Вошли как ${svc.username}')),
+          TextButton(
+            onPressed: () async {
+              await ref.read(lastfmServiceProvider).logout();
+              setState(() {});
+            },
+            child: const Text('Выйти'),
+          ),
+        ],
+      );
+    }
+    InputDecoration dec(String h, {bool pass = false}) => InputDecoration(
+          isDense: true,
+          hintText: h,
+          filled: true,
+          fillColor: AppColors.surface2,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Скробблинг прослушиваний в ваш профиль. Создайте API-аккаунт на '
+          'last.fm/api/account/create (нужны API key и shared secret), затем '
+          'войдите логином и паролем. Пароль не сохраняется.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
+        ),
+        const SizedBox(height: 8),
+        TextField(controller: _key, decoration: dec('API key')),
+        const SizedBox(height: 8),
+        TextField(controller: _secret, decoration: dec('Shared secret')),
+        const SizedBox(height: 8),
+        TextField(controller: _user, decoration: dec('Логин Last.fm')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: _pass, obscureText: true, decoration: dec('Пароль')),
+        if (_msg != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_msg!,
+                style: const TextStyle(color: Color(0xFFE24B4A), fontSize: 12)),
+          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(
+            onPressed: _busy ? null : _login,
+            child: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Войти'),
+          ),
+        ),
       ],
     );
   }

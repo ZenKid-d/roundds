@@ -10,6 +10,7 @@ import 'audio_handler.dart';
 class PlaybackController extends ChangeNotifier {
   PlaybackController(this._handler) {
     _handler.onUiChanged = notifyListeners;
+    _handler.onTrackStarted = _onTrackStarted;
     // Позицию НЕ уведомляем на каждый тик (иначе весь плеер перестраивается
     // ~5 раз/сек). Её слушает отдельный positionProvider — обновляется только
     // прогресс-бар. Здесь лишь держим поле актуальным для чтения.
@@ -29,11 +30,57 @@ class PlaybackController extends ChangeNotifier {
       _playing = s.playing;
       if (s.playing) {
         if (!_listenSw.isRunning) _listenSw.start();
+        _playSince ??= DateTime.now();
       } else {
         _flushListened();
+        _accumPlayed();
       }
       notifyListeners();
     }));
+  }
+
+  /// Колбэки для Last.fm.
+  void Function(Track track)? onNowPlaying;
+  void Function(Track track, int startedAtEpochSec)? onScrobble;
+
+  // Учёт проигранного времени текущего трека — для скроббла по правилам Last.fm.
+  Track? _npTrack;
+  int _npStartedEpoch = 0;
+  int _playedMs = 0;
+  DateTime? _playSince;
+
+  void _accumPlayed() {
+    if (_playSince != null) {
+      _playedMs += DateTime.now().difference(_playSince!).inMilliseconds;
+      _playSince = null;
+    }
+  }
+
+  void _onTrackStarted(Track t) {
+    _finalizeScrobble();
+    _npTrack = t;
+    _npStartedEpoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _playedMs = 0;
+    _playSince = _playing ? DateTime.now() : null;
+    onNowPlaying?.call(t);
+  }
+
+  void _finalizeScrobble() {
+    final t = _npTrack;
+    if (t == null) return;
+    _accumPlayed();
+    final dur = t.duration?.inMilliseconds ?? 0;
+    if (dur > 0 && dur < 30000) {
+      _npTrack = null;
+      return; // трек короче 30 сек — не скроббим
+    }
+    final threshold =
+        dur > 0 ? (dur ~/ 2 < 240000 ? dur ~/ 2 : 240000) : 60000;
+    if (_playedMs >= threshold && _playedMs >= 20000) {
+      onScrobble?.call(t, _npStartedEpoch);
+    }
+    _npTrack = null;
+    _playedMs = 0;
   }
 
   final RoundsAudioHandler _handler;
@@ -116,6 +163,7 @@ class PlaybackController extends ChangeNotifier {
   @override
   void dispose() {
     _flushListened();
+    _finalizeScrobble();
     for (final s in _subs) {
       s.cancel();
     }

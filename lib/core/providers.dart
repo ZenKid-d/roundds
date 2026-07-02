@@ -9,6 +9,7 @@ import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
 import '../data/google_yt_import.dart';
+import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
 import '../data/translation_service.dart';
@@ -79,9 +80,15 @@ final settingsProvider =
 final audioHandlerProvider = Provider<RoundsAudioHandler>(
     (ref) => throw UnimplementedError('audioHandler override missing'));
 
+final lastfmServiceProvider = Provider<LastfmService>(
+    (ref) => LastfmService(ref.read(dioProvider), ref.read(prefsProvider)));
+
 final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
   final pc = PlaybackController(ref.read(audioHandlerProvider));
   pc.onListened = (ms) => ref.read(libraryProvider).addListened(ms);
+  final lastfm = ref.read(lastfmServiceProvider);
+  pc.onNowPlaying = lastfm.updateNowPlaying;
+  pc.onScrobble = lastfm.scrobble;
   return pc;
 });
 

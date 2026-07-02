@@ -91,6 +91,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
   void Function()? onUiChanged;
   void _notify() => onUiChanged?.call();
 
+  /// Вызывается при старте нового трека (для скробблинга Last.fm).
+  void Function(Track track)? onTrackStarted;
+
   AudioPlayer get player => _player;
   List<Track> get trackQueue => List.unmodifiable(_queue);
   Track? get current =>
@@ -203,6 +206,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _error = null;
     _notify();
     mediaItem.add(_toMediaItem(track));
+    onTrackStarted?.call(track);
     try {
       final local = localFileResolver?.call(track.uid);
       if (local != null) {
@@ -289,6 +293,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _error = null;
     _notify();
     mediaItem.add(_toMediaItem(track));
+    onTrackStarted?.call(track);
     try {
       final src = await _sourceForTrack(track);
       final concat = ConcatenatingAudioSource(children: [src]);
@@ -362,7 +367,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
     if (ni != null) _index = ni;
     _gaplessNext = null;
     final cur = current;
-    if (cur != null) mediaItem.add(_toMediaItem(cur));
+    if (cur != null) {
+      mediaItem.add(_toMediaItem(cur));
+      onTrackStarted?.call(cur);
+    }
     _notify();
     final concat = _concat!;
     final removeCount = idx.clamp(0, concat.length - 1);
