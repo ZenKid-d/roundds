@@ -4,6 +4,7 @@ import 'package:googleapis/youtube/v3.dart';
 
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
+import 'sources/youtube_music_source.dart';
 
 /// Импорт лайков из YouTube Music через официальный YouTube Data API (OAuth).
 /// Читает список «Мне понравилось» пользователя (videos.list?myRating=like).
@@ -51,9 +52,8 @@ class GoogleYtImportService {
             id: id,
             title: sn.title ?? '',
             artist: artist,
-            artworkUrl: sn.thumbnails?.high?.url ??
-                sn.thumbnails?.medium?.url ??
-                sn.thumbnails?.default_?.url,
+            // Единая геометрия превью (hqdefault) — кроп в квадрат в Artwork.
+            artworkUrl: YoutubeMusicSource.ytArtwork(id),
             duration: _parseIso(v.contentDetails?.duration),
             source: SourceType.youtube,
           ));

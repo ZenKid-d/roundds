@@ -241,7 +241,7 @@ class YoutubeMusicSource implements MusicSource {
       id: videoId,
       title: title,
       artist: artist.isEmpty ? 'YouTube' : artist,
-      artworkUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+      artworkUrl: ytArtwork(videoId),
       duration: duration,
       source: SourceType.youtube,
     );
@@ -344,11 +344,17 @@ class YoutubeMusicSource implements MusicSource {
       id: v.id.value,
       title: v.title,
       artist: artist,
-      artworkUrl: v.thumbnails.highResUrl,
+      // Единый формат превью (4:3 с полосами) — их обрезает Artwork в квадрат.
+      artworkUrl: ytArtwork(v.id.value),
       duration: v.duration,
       source: SourceType.youtube,
     );
   }
+
+  /// URL превью YouTube по videoId. hqdefault есть всегда; чёрные полосы 4:3
+  /// убираются зум-кропом в [Artwork].
+  static String ytArtwork(String videoId) =>
+      'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
 
   void dispose() => _yt.close();
 }

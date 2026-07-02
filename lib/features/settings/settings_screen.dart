@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
@@ -102,6 +103,9 @@ class SettingsScreen extends ConsumerWidget {
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const StatsScreen())),
         ),
+        const SizedBox(height: 16),
+        const _Header('Обновление'),
+        const _UpdateTile(),
         const SizedBox(height: 24),
         const _About(),
       ],
@@ -388,11 +392,52 @@ class _Header extends StatelessWidget {
       );
 }
 
-class _About extends StatelessWidget {
+class _UpdateTile extends ConsumerStatefulWidget {
+  const _UpdateTile();
+  @override
+  ConsumerState<_UpdateTile> createState() => _UpdateTileState();
+}
+
+class _UpdateTileState extends ConsumerState<_UpdateTile> {
+  bool _checking = false;
+
+  Future<void> _check() async {
+    setState(() => _checking = true);
+    await checkForUpdate(context, ref, silent: false);
+    if (mounted) setState(() => _checking = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.system_update),
+      title: const Text('Проверить обновления'),
+      subtitle: Text('Загрузка новой версии прямо из приложения',
+          style: TextStyle(color: AppColors.white45, fontSize: 11)),
+      trailing: _checking
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.chevron_right),
+      onTap: _checking ? null : _check,
+    );
+  }
+}
+
+class _About extends ConsumerWidget {
   const _About();
   @override
-  Widget build(BuildContext context) => Center(
-        child: Text('Roundds 0.1 · не для Google Play',
-            style: TextStyle(fontSize: 11, color: AppColors.white45)),
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: FutureBuilder<String>(
+        future: ref.read(updateServiceProvider).currentVersion(),
+        builder: (_, snap) => Text(
+          'Roundds ${snap.data ?? ''} · не для Google Play',
+          style: TextStyle(fontSize: 11, color: AppColors.white45),
+        ),
+      ),
+    );
+  }
 }

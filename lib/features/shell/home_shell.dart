@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/update_flow.dart';
 import '../../core/widgets/mini_player.dart';
 import '../drawer/app_drawer.dart';
 import '../home/home_screen.dart';
@@ -31,6 +32,15 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   AppSection _section = AppSection.home;
+
+  @override
+  void initState() {
+    super.initState();
+    // Тихая авто-проверка обновлений после первого кадра.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkForUpdate(context, ref, silent: true);
+    });
+  }
 
   void _select(AppSection s) {
     setState(() => _section = s);

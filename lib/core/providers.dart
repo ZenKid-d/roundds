@@ -18,6 +18,7 @@ import 'downloads_controller.dart';
 import 'library_controller.dart';
 import 'settings_controller.dart';
 import 'sleep_timer.dart';
+import 'update_service.dart';
 
 /// Переопределяется в main() реальным экземпляром.
 final prefsProvider = Provider<SharedPreferences>(
@@ -92,6 +93,9 @@ final libraryProvider = ChangeNotifierProvider<LibraryController>(
 
 final lyricsServiceProvider =
     Provider<LyricsService>((ref) => LyricsService(ref.read(dioProvider)));
+
+final updateServiceProvider =
+    Provider<UpdateService>((ref) => UpdateService(ref.read(dioProvider)));
 
 final sleepTimerProvider = ChangeNotifierProvider<SleepTimerController>(
     (ref) => SleepTimerController());

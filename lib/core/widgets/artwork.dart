@@ -17,13 +17,19 @@ class Artwork extends StatelessWidget {
   /// Для стабильного цвета заглушки (например, uid трека).
   final String? seed;
 
+  /// Превью YouTube (i.ytimg.com) — это кадр 4:3 с чёрными полосами сверху и
+  /// снизу. Чтобы обложка выглядела квадратной без полос, слегка приближаем
+  /// картинку по центру: полосы (~12.5% сверху/снизу) уходят за пределы кадра.
+  static const _ytZoom = 1.34;
+
   @override
   Widget build(BuildContext context) {
     final r = radius ??
         Theme.of(context).extension<AppShapes>()?.radius ??
         16;
     final placeholder = _placeholder();
-    final child = (url == null || url!.isEmpty)
+    final isYtThumb = url != null && url!.contains('i.ytimg.com');
+    Widget child = (url == null || url!.isEmpty)
         ? placeholder
         : CachedNetworkImage(
             imageUrl: url!,
@@ -33,6 +39,10 @@ class Artwork extends StatelessWidget {
             placeholder: (_, __) => placeholder,
             errorWidget: (_, __, ___) => placeholder,
           );
+    if (isYtThumb) {
+      // Приближаем по центру — обрезаем чёрные полосы прямоугольного превью.
+      child = Transform.scale(scale: _ytZoom, child: child);
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(r),
       child: SizedBox(width: size, height: size, child: child),
