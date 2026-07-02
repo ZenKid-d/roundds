@@ -19,6 +19,8 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _player.playerStateStream.listen((s) {
       if (s.processingState == ProcessingState.completed) _onComplete();
     });
+    // Бесшовный режим: реагируем на переход плеера на следующий элемент.
+    _player.currentIndexStream.listen(_onGaplessIndex);
   }
 
   final Aggregator _aggregator;
@@ -68,6 +70,20 @@ class RoundsAudioHandler extends BaseAudioHandler {
   // Пауза после текущего трека (таймер сна «до конца трека»).
   bool sleepAfterTrack = false;
 
+  // Бесшовное воспроизведение (эксперим.): ConcatenatingAudioSource с окном
+  // [текущий, следующий]. По умолчанию выключено — обычный путь не меняется.
+  bool _gapless = false;
+  ConcatenatingAudioSource? _concat;
+  int? _gaplessNext; // логический индекс буферизованного следующего
+
+  bool get gapless => _gapless;
+  Future<void> setGapless(bool on) async {
+    if (_gapless == on) return;
+    _gapless = on;
+    _notify();
+    if (current != null) await _load(); // применить к текущему треку
+  }
+
   // Предзагрузка следующего трека.
   String? _preUid;
   PlayableStream? _preStream;
@@ -86,11 +102,13 @@ class RoundsAudioHandler extends BaseAudioHandler {
 
   void toggleShuffle() {
     _shuffle = !_shuffle;
+    _resyncGaplessNext();
     _notify();
   }
 
   void cycleRepeat() {
     _repeat = LoopMode.values[(_repeat.index + 1) % LoopMode.values.length];
+    _resyncGaplessNext();
     _notify();
   }
 
@@ -177,6 +195,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   Future<void> _load() async {
     final track = current;
     if (track == null) return;
+    if (_gapless) {
+      await _loadGapless(track);
+      return;
+    }
     _loading = true;
     _error = null;
     _notify();
@@ -253,6 +275,123 @@ class RoundsAudioHandler extends BaseAudioHandler {
     } catch (_) {/* не критично */}
   }
 
+  // --- Бесшовное воспроизведение (эксперим.) ---
+
+  Future<AudioSource> _sourceForTrack(Track t) async {
+    final local = localFileResolver?.call(t.uid);
+    if (local != null) return AudioSource.uri(Uri.file(local));
+    final s = await _aggregator.resolveStreamWithFallback(t);
+    return AudioSource.uri(s.uri, headers: s.headers);
+  }
+
+  Future<void> _loadGapless(Track track) async {
+    _loading = true;
+    _error = null;
+    _notify();
+    mediaItem.add(_toMediaItem(track));
+    try {
+      final src = await _sourceForTrack(track);
+      final concat = ConcatenatingAudioSource(children: [src]);
+      _concat = concat;
+      _gaplessNext = null;
+      await _player.setAudioSource(concat);
+      _player.play();
+      unawaited(_maybeExtendRadio());
+      unawaited(_appendNextGapless());
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
+
+  /// Следующий логический индекс с учётом repeat/shuffle/radio; null — конец.
+  int? _nextIndex() {
+    if (_queue.isEmpty) return null;
+    if (_repeat == LoopMode.one) return _index; // бесшовный повтор одного
+    int next;
+    if (_shuffle && _queue.length > 1) {
+      final curArtist = current?.artist.toLowerCase();
+      next = _index;
+      for (var attempt = 0; attempt < 6; attempt++) {
+        var n = _rng.nextInt(_queue.length - 1);
+        if (n >= _index) n += 1;
+        next = n;
+        if (curArtist == null ||
+            _queue[n].artist.toLowerCase() != curArtist) {
+          break;
+        }
+      }
+    } else {
+      next = _index + 1;
+    }
+    if (next >= _queue.length) {
+      if (_repeat == LoopMode.all) {
+        next = 0;
+      } else {
+        return null;
+      }
+    }
+    return next;
+  }
+
+  /// Догружает следующий трек в конец окна (буферизуется для бесшовности).
+  Future<void> _appendNextGapless() async {
+    final concat = _concat;
+    if (!_gapless || concat == null) return;
+    if (sleepAfterTrack) return; // уснуть после текущего — не докладываем
+    if (concat.length > 1) return; // уже буферизован
+    final ni = _nextIndex();
+    if (ni == null) {
+      _gaplessNext = null;
+      return;
+    }
+    try {
+      final src = await _sourceForTrack(_queue[ni]);
+      if (!_gapless || _concat != concat || concat.length > 1) return;
+      await concat.add(src);
+      _gaplessNext = ni;
+    } catch (_) {/* не критично — доиграет и остановится */}
+  }
+
+  /// Плеер бесшовно перешёл на следующий элемент окна.
+  void _onGaplessIndex(int? idx) {
+    if (!_gapless || _concat == null || idx == null || idx <= 0) return;
+    final ni = _gaplessNext;
+    if (ni != null) _index = ni;
+    _gaplessNext = null;
+    final cur = current;
+    if (cur != null) mediaItem.add(_toMediaItem(cur));
+    _notify();
+    final concat = _concat!;
+    final removeCount = idx.clamp(0, concat.length - 1);
+    Future(() async {
+      try {
+        for (var i = 0; i < removeCount; i++) {
+          await concat.removeAt(0);
+        }
+      } catch (_) {}
+      await _maybeExtendRadio();
+      await _appendNextGapless();
+    });
+  }
+
+  /// Сбрасывает буферизованный «следующий» после изменений очереди.
+  void _resyncGaplessNext() {
+    final concat = _concat;
+    if (!_gapless || concat == null) return;
+    Future(() async {
+      try {
+        while (concat.length > 1) {
+          await concat.removeAt(concat.length - 1);
+        }
+      } catch (_) {}
+      _gaplessNext = null;
+      await _appendNextGapless();
+    });
+  }
+
   MediaItem _toMediaItem(Track t) => MediaItem(
         id: t.uid,
         title: t.title,
@@ -264,6 +403,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
 
   void addToQueue(Track t) {
     _queue.add(t);
+    _resyncGaplessNext();
     _notify();
   }
 
@@ -272,6 +412,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final at = (_index >= 0 ? _index + 1 : _queue.length)
         .clamp(0, _queue.length);
     _queue.insert(at, t);
+    _resyncGaplessNext();
     _notify();
   }
 
@@ -280,6 +421,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final t = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, t);
     if (_index == oldIndex) _index = newIndex;
+    _resyncGaplessNext();
     _notify();
   }
 

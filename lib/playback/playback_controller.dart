@@ -78,6 +78,8 @@ class PlaybackController extends ChangeNotifier {
   Future<void> setSkipSilence(bool on) => _handler.setSkipSilence(on);
   bool get normalize => _handler.normalize;
   Future<void> setNormalize(bool on) => _handler.setNormalize(on);
+  bool get gapless => _handler.gapless;
+  Future<void> setGapless(bool on) => _handler.setGapless(on);
 
   bool get sleepAfterTrack => _handler.sleepAfterTrack;
   void setSleepAfterTrack(bool on) {

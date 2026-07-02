@@ -143,6 +143,21 @@ class SettingsScreen extends ConsumerWidget {
             },
           );
         }),
+        Consumer(builder: (context, ref, _) {
+          final on = ref.watch(playbackProvider).gapless;
+          return SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: on,
+            title: const Text('Бесшовное воспроизведение (эксперим.)'),
+            subtitle: Text('Без паузы между треками. Экспериментально — если '
+                'что-то играет не так, выключите.',
+                style: TextStyle(color: AppColors.white45, fontSize: 11)),
+            onChanged: (v) {
+              ref.read(playbackProvider).setGapless(v);
+              ref.read(prefsProvider).setBool('gapless', v);
+            },
+          );
+        }),
         _DataSaverTile(),
         const SizedBox(height: 16),
         const _Header('Резервная копия'),

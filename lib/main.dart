@@ -66,6 +66,9 @@ Future<void> main() async {
   if (prefs.getBool('normalize') ?? false) {
     unawaited(handler.setNormalize(true));
   }
+  if (prefs.getBool('gapless') ?? false) {
+    unawaited(handler.setGapless(true));
+  }
 
   runApp(
     ProviderScope(
