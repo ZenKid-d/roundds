@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -160,7 +161,7 @@ class SettingsScreen extends ConsumerWidget {
           );
         }),
         _DataSaverTile(),
-        _RealVizTile(),
+        const _RealVizTile(),
         const SizedBox(height: 16),
         const _Header('Резервная копия'),
         Row(
@@ -730,15 +731,11 @@ class _LastfmState extends ConsumerState<_Lastfm> {
   }
 }
 
-class _RealVizTile extends ConsumerStatefulWidget {
+class _RealVizTile extends ConsumerWidget {
+  const _RealVizTile();
   @override
-  ConsumerState<_RealVizTile> createState() => _RealVizTileState();
-}
-
-class _RealVizTileState extends ConsumerState<_RealVizTile> {
-  @override
-  Widget build(BuildContext context) {
-    final on = ref.read(prefsProvider).getBool('real_visualizer') ?? false;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(realVisualizerProvider);
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
       value: on,
@@ -747,9 +744,17 @@ class _RealVizTileState extends ConsumerState<_RealVizTile> {
           'Спектр по звуку/биту (Android Visualizer). Требует разрешение '
           'микрофона — оно нужно системе для доступа к аудио, запись не ведётся.',
           style: TextStyle(color: AppColors.white45, fontSize: 11)),
-      onChanged: (v) {
-        ref.read(prefsProvider).setBool('real_visualizer', v);
-        setState(() {});
+      onChanged: (v) async {
+        await ref.read(prefsProvider).setBool('real_visualizer', v);
+        ref.read(realVisualizerProvider.notifier).state = v;
+        if (v) {
+          final st = await Permission.microphone.request();
+          if (!st.isGranted && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(
+                    'Без доступа к микрофону визуализатор останется декоративным')));
+          }
+        }
       },
     );
   }

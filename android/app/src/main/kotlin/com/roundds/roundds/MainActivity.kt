@@ -73,8 +73,8 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }
                         val mag = sum / perBand
-                        // Перцептивная нормализация к 0..1 (fft-байты ~ -128..127).
-                        out[b] = Math.sqrt(mag / 110.0).coerceIn(0.0, 1.0)
+                        // Перцептивная нормализация с усилением (живой отклик).
+                        out[b] = (Math.sqrt(mag) * 0.2).coerceIn(0.0, 1.0)
                     }
                     val list = out.toList()
                     runOnUiThread { eventSink?.success(list) }

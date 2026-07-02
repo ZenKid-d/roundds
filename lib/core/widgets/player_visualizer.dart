@@ -36,16 +36,13 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
 
   StreamSubscription<List<double>>? _sub;
   bool _started = false;
+  bool _enabled = false;
   List<double> _smooth = [];
-
-  bool get _realEnabled =>
-      ref.read(prefsProvider).getBool('real_visualizer') ?? false;
 
   @override
   void initState() {
     super.initState();
     if (widget.playing) _c.repeat();
-    _apply();
   }
 
   @override
@@ -60,7 +57,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   }
 
   void _apply() {
-    if (_realEnabled && widget.playing) {
+    if (_enabled && widget.playing) {
       _ensureStarted();
     } else {
       _stopReal();
@@ -110,7 +107,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
 
   double _valueAt(int i) {
     // Реальные данные, если есть; иначе — декоративная волна.
-    if (_realEnabled && _smooth.isNotEmpty && widget.playing) {
+    if (_enabled && _smooth.isNotEmpty && widget.playing) {
       final idx = (i * _smooth.length / widget.bars).floor().clamp(0, _smooth.length - 1);
       return _smooth[idx];
     }
@@ -122,6 +119,14 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
 
   @override
   Widget build(BuildContext context) {
+    // Реактивно на настройку: включили/выключили — стартуем/останавливаем.
+    final enabled = ref.watch(realVisualizerProvider);
+    if (enabled != _enabled) {
+      _enabled = enabled;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _apply();
+      });
+    }
     return RepaintBoundary(
       child: SizedBox(
         height: widget.height,

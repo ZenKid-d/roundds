@@ -117,6 +117,10 @@ final updateServiceProvider =
 final translationServiceProvider =
     Provider<TranslationService>((ref) => TranslationService(ref.read(dioProvider)));
 
+/// Реактивная настройка «реальный визуализатор» (prefs не реактивен сам по себе).
+final realVisualizerProvider = StateProvider<bool>(
+    (ref) => ref.read(prefsProvider).getBool('real_visualizer') ?? false);
+
 final updateControllerProvider = ChangeNotifierProvider<UpdateController>(
     (ref) => UpdateController(ref.read(updateServiceProvider)));
 
