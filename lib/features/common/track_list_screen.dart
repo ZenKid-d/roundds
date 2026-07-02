@@ -6,6 +6,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
+import '../../core/widgets/track_download_status.dart';
 import '../../domain/models/track.dart';
 
 /// Универсальный экран со списком треков: статический список или загрузчик.
@@ -57,8 +58,30 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final tracks = _tracks;
+    final downloads = ref.watch(downloadsProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          if (tracks != null && tracks.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.download),
+              tooltip: 'Скачать все треки',
+              onPressed: downloads.playlistBusy
+                  ? null
+                  : () => ref
+                      .read(downloadsProvider)
+                      .downloadPlaylist(widget.title, tracks),
+            ),
+        ],
+        bottom: downloads.playlistBusy
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(3),
+                child:
+                    LinearProgressIndicator(value: downloads.playlistProgress),
+              )
+            : null,
+      ),
       bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -110,6 +133,7 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
                               track: tracks[i],
                               onTap: () => playTrack(ref, context, tracks[i],
                                   queue: tracks),
+                              trailing: TrackDownloadStatus(tracks[i]),
                             ),
                           ),
                         ),

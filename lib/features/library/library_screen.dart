@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../../core/downloads_controller.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/artwork.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
+import '../../core/widgets/track_download_status.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/track.dart';
 import '../common/track_list_screen.dart';
@@ -350,36 +350,6 @@ class _DownloadsView extends ConsumerWidget {
   }
 }
 
-/// Иконка состояния скачивания трека для строки плейлиста: прогресс во время
-/// загрузки, «готово» для скачанного, кнопка «скачать» — для остального.
-Widget _trackDlStatus(
-    BuildContext context, WidgetRef ref, DownloadsController dl, Track t) {
-  final accent = Theme.of(context).colorScheme.primary;
-  if (dl.isDownloading(t.uid)) {
-    final p = dl.progressFor(t.uid);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: SizedBox(
-        width: 22,
-        height: 22,
-        child: CircularProgressIndicator(
-            value: p == 0 ? null : p, strokeWidth: 2, color: accent),
-      ),
-    );
-  }
-  if (dl.isDownloaded(t.uid)) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Icon(Icons.download_done, size: 20, color: accent),
-    );
-  }
-  return IconButton(
-    icon: Icon(Icons.download_outlined, color: AppColors.white45),
-    tooltip: 'Скачать трек',
-    onPressed: () => ref.read(downloadsProvider).download(t),
-  );
-}
-
 Future<String?> _askName(BuildContext context, String title,
     {String initial = ''}) {
   final c = TextEditingController(text: initial);
@@ -579,7 +549,7 @@ class PlaylistScreen extends ConsumerWidget {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _trackDlStatus(context, ref, downloads, t),
+                      TrackDownloadStatus(t),
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline),
                         tooltip: 'Убрать из плейлиста',
