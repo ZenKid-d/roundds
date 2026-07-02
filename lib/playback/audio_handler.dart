@@ -48,7 +48,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   // Кроссфейд-лайт: плавное затухание в конце и появление в начале трека.
   bool _crossfade = false;
   Timer? _fadeTimer;
-  static const int _fadeMs = 700;
+  int _fadeMs = 700; // длительность затухания, настраивается
+
+  // Пауза после текущего трека (таймер сна «до конца трека»).
+  bool sleepAfterTrack = false;
 
   // Предзагрузка следующего трека.
   String? _preUid;
@@ -94,6 +97,24 @@ class RoundsAudioHandler extends BaseAudioHandler {
       _fadeTimer = null;
       _player.setVolume(1);
     }
+    _notify();
+  }
+
+  /// Длительность затухания кроссфейда, сек (0.3–6.0).
+  double get crossfadeSeconds => _fadeMs / 1000.0;
+  void setCrossfadeSeconds(double seconds) {
+    _fadeMs = (seconds.clamp(0.3, 6.0) * 1000).round();
+    _notify();
+  }
+
+  /// Пропуск тишины в треке (Android).
+  bool _skipSilence = false;
+  bool get skipSilence => _skipSilence;
+  Future<void> setSkipSilence(bool on) async {
+    _skipSilence = on;
+    try {
+      await _player.setSkipSilenceEnabled(on);
+    } catch (_) {/* платформа может не поддерживать */}
     _notify();
   }
 
@@ -236,7 +257,16 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
-  Future<void> _onComplete() => _advance(auto: true);
+  Future<void> _onComplete() async {
+    // Таймер сна «до конца трека»: останавливаемся, а не переходим дальше.
+    if (sleepAfterTrack) {
+      sleepAfterTrack = false;
+      _notify();
+      await _player.pause();
+      return;
+    }
+    await _advance(auto: true);
+  }
 
   Future<void> _advance({required bool auto}) async {
     if (_queue.isEmpty) return;

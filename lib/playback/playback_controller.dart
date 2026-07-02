@@ -72,6 +72,16 @@ class PlaybackController extends ChangeNotifier {
   Future<void> setSpeed(double s) => _handler.setSpeed(s);
   bool get crossfade => _handler.crossfade;
   void setCrossfade(bool on) => _handler.setCrossfade(on);
+  double get crossfadeSeconds => _handler.crossfadeSeconds;
+  void setCrossfadeSeconds(double s) => _handler.setCrossfadeSeconds(s);
+  bool get skipSilence => _handler.skipSilence;
+  Future<void> setSkipSilence(bool on) => _handler.setSkipSilence(on);
+
+  bool get sleepAfterTrack => _handler.sleepAfterTrack;
+  void setSleepAfterTrack(bool on) {
+    _handler.sleepAfterTrack = on;
+    notifyListeners();
+  }
 
   Future<void> playTrack(Track track, {List<Track>? queue}) =>
       _handler.playTrack(track, queue: queue);

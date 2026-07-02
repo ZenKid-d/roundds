@@ -13,6 +13,18 @@ import '../../domain/models/playlist.dart';
 import '../../domain/models/track.dart';
 import '../common/track_list_screen.dart';
 
+/// Строка фильтра медиатеки (по названию/артисту), в нижнем регистре.
+final _libQueryProvider = StateProvider<String>((ref) => '');
+
+enum PlaylistSort { recent, name, count }
+
+final _plSortProvider = StateProvider<PlaylistSort>((ref) => PlaylistSort.recent);
+
+bool _matchTrack(Track t, String q) =>
+    q.isEmpty ||
+    t.title.toLowerCase().contains(q) ||
+    t.artist.toLowerCase().contains(q);
+
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
@@ -23,9 +35,23 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _tab = 0; // 0 плейлисты, 1 любимое, 2 загрузки, 3 очередь
   static const _titles = ['Плейлисты', 'Любимое', 'Загрузки', 'Очередь'];
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _selectTab(int i) {
+    setState(() => _tab = i);
+    _search.clear();
+    ref.read(_libQueryProvider.notifier).state = '';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final libQuery = ref.watch(_libQueryProvider);
     return Column(
       children: [
         Padding(
@@ -41,7 +67,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         _Toggle(
                             label: _titles[i],
                             active: _tab == i,
-                            onTap: () => setState(() => _tab = i)),
+                            onTap: () => _selectTab(i)),
                         const SizedBox(width: 8),
                       ],
                     ],
@@ -49,6 +75,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
               ),
               if (_tab == 0) ...[
+                _PlaylistSortButton(),
                 IconButton(
                     icon: const Icon(Icons.library_add_outlined),
                     tooltip: 'Импорт плейлиста',
@@ -74,6 +101,37 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
         ),
+        if (_tab != 3)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: TextField(
+              controller: _search,
+              onChanged: (v) => ref.read(_libQueryProvider.notifier).state =
+                  v.trim().toLowerCase(),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: _tab == 0
+                    ? 'Фильтр плейлистов'
+                    : 'Фильтр по названию или артисту',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: libQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _search.clear();
+                          ref.read(_libQueryProvider.notifier).state = '';
+                        },
+                      ),
+                filled: true,
+                fillColor: AppColors.surface2,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
         Expanded(child: _bodyFor(_tab)),
       ],
     );
@@ -258,10 +316,12 @@ class _LikedView extends ConsumerWidget {
   const _LikedView();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final liked = ref.watch(libraryProvider).liked;
+    final q = ref.watch(_libQueryProvider);
+    final liked =
+        ref.watch(libraryProvider).liked.where((t) => _matchTrack(t, q)).toList();
     if (liked.isEmpty) {
       return Center(
-        child: Text('Нет лайкнутых треков',
+        child: Text(q.isEmpty ? 'Нет лайкнутых треков' : 'Ничего не найдено',
             style: TextStyle(color: AppColors.white45)),
       );
     }
@@ -290,13 +350,15 @@ class _DownloadsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ctl = ref.watch(downloadsProvider);
-    final dl = ctl.downloads;
-    final busy = ctl.inProgress;
+    final q = ref.watch(_libQueryProvider);
+    final dl = ctl.downloads.where((t) => _matchTrack(t, q)).toList();
+    final busy =
+        ctl.inProgress.where((t) => _matchTrack(t, q)).toList();
     final accent = Theme.of(context).colorScheme.primary;
 
     if (dl.isEmpty && busy.isEmpty && !ctl.playlistBusy) {
       return Center(
-        child: Text('Нет скачанных треков',
+        child: Text(q.isEmpty ? 'Нет скачанных треков' : 'Ничего не найдено',
             style: TextStyle(color: AppColors.white45)),
       );
     }
@@ -411,17 +473,75 @@ class _Toggle extends StatelessWidget {
   }
 }
 
+int _plCreatedAt(String id) {
+  final m = RegExp(r'pl_(\d+)').firstMatch(id);
+  return m != null ? (int.tryParse(m.group(1)!) ?? 0) : 0;
+}
+
+List<PlaylistX> _sortPlaylists(List<PlaylistX> list, PlaylistSort sort) {
+  final l = List<PlaylistX>.from(list);
+  switch (sort) {
+    case PlaylistSort.name:
+      l.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    case PlaylistSort.count:
+      l.sort((a, b) => b.tracks.length - a.tracks.length);
+    case PlaylistSort.recent:
+      l.sort((a, b) => _plCreatedAt(b.id).compareTo(_plCreatedAt(a.id)));
+  }
+  return l;
+}
+
+class _PlaylistSortButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const labels = {
+      PlaylistSort.recent: 'Недавно добавленные',
+      PlaylistSort.name: 'По имени',
+      PlaylistSort.count: 'По числу треков',
+    };
+    return PopupMenuButton<PlaylistSort>(
+      icon: const Icon(Icons.sort),
+      tooltip: 'Сортировка',
+      onSelected: (v) => ref.read(_plSortProvider.notifier).state = v,
+      itemBuilder: (_) => [
+        for (final e in labels.entries)
+          PopupMenuItem(
+            value: e.key,
+            child: Row(
+              children: [
+                Icon(
+                    ref.read(_plSortProvider) == e.key
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18),
+                const SizedBox(width: 10),
+                Text(e.value),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _PlaylistsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lib = ref.watch(libraryProvider);
-    final playlists = lib.playlists;
+    final q = ref.watch(_libQueryProvider);
+    final sort = ref.watch(_plSortProvider);
+    final playlists = _sortPlaylists(
+      lib.playlists
+          .where((p) => q.isEmpty || p.name.toLowerCase().contains(q))
+          .toList(),
+      sort,
+    );
     final smart = <(String, IconData, List<Track>)>[
       ('Часто слушаю', Icons.local_fire_department,
           lib.topTracks(limit: 50).map((e) => e.key).toList()),
       ('Недавнее', Icons.history, lib.history),
       ('Только лайки', Icons.favorite, lib.liked),
-    ];
+    ].where((s) => q.isEmpty || s.$1.toLowerCase().contains(q)).toList();
     final accent = Theme.of(context).colorScheme.primary;
 
     return ListView(
@@ -445,7 +565,10 @@ class _PlaylistsView extends ConsumerWidget {
         if (playlists.isEmpty)
           Padding(
             padding: const EdgeInsets.all(20),
-            child: Text('Своих плейлистов пока нет. Нажмите + или импортируйте.',
+            child: Text(
+                q.isEmpty
+                    ? 'Своих плейлистов пока нет. Нажмите + или импортируйте.'
+                    : 'Плейлисты не найдены.',
                 style: TextStyle(color: AppColors.white45)),
           ),
         for (final pl in playlists)
@@ -506,18 +629,33 @@ class _PlaylistsView extends ConsumerWidget {
   }
 }
 
-class PlaylistScreen extends ConsumerWidget {
+class PlaylistScreen extends ConsumerStatefulWidget {
   const PlaylistScreen({super.key, required this.playlistId});
   final String playlistId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pl = ref
-        .watch(libraryProvider)
-        .playlists
-        .firstWhere((e) => e.id == playlistId,
-            orElse: () => PlaylistX(id: playlistId, name: 'Плейлист'));
+  ConsumerState<PlaylistScreen> createState() => _PlaylistScreenState();
+}
+
+class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
+  final _search = TextEditingController();
+  String _q = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pl = ref.watch(libraryProvider).playlists.firstWhere(
+        (e) => e.id == widget.playlistId,
+        orElse: () => PlaylistX(id: widget.playlistId, name: 'Плейлист'));
     final downloads = ref.watch(downloadsProvider);
+    final tracks =
+        pl.tracks.where((t) => _matchTrack(t, _q)).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(pl.name),
@@ -545,28 +683,70 @@ class PlaylistScreen extends ConsumerWidget {
           ? Center(
               child: Text('Плейлист пуст',
                   style: TextStyle(color: AppColors.white45)))
-          : ListView.builder(
-              itemCount: pl.tracks.length,
-              itemBuilder: (_, i) {
-                final t = pl.tracks[i];
-                return TrackRow(
-                  track: t,
-                  onTap: () => playTrack(ref, context, t, queue: pl.tracks),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TrackDownloadStatus(t),
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        tooltip: 'Убрать из плейлиста',
-                        onPressed: () => ref
-                            .read(libraryProvider)
-                            .removeFromPlaylist(playlistId, t),
+          : Column(
+              children: [
+                if (pl.tracks.length >= 8)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: TextField(
+                      controller: _search,
+                      onChanged: (v) =>
+                          setState(() => _q = v.trim().toLowerCase()),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Поиск в плейлисте',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _q.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _search.clear();
+                                  setState(() => _q = '');
+                                },
+                              ),
+                        filled: true,
+                        fillColor: AppColors.surface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
-                    ],
+                    ),
                   ),
-                );
-              },
+                Expanded(
+                  child: tracks.isEmpty
+                      ? Center(
+                          child: Text('Ничего не найдено',
+                              style: TextStyle(color: AppColors.white45)))
+                      : ListView.builder(
+                          itemCount: tracks.length,
+                          itemBuilder: (_, i) {
+                            final t = tracks[i];
+                            return TrackRow(
+                              track: t,
+                              onTap: () =>
+                                  playTrack(ref, context, t, queue: tracks),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TrackDownloadStatus(t),
+                                  IconButton(
+                                    icon: const Icon(
+                                        Icons.remove_circle_outline),
+                                    tooltip: 'Убрать из плейлиста',
+                                    onPressed: () => ref
+                                        .read(libraryProvider)
+                                        .removeFromPlaylist(
+                                            widget.playlistId, t),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
     );
   }

@@ -62,16 +62,67 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 16),
         const _Header('Аудио'),
         Consumer(builder: (context, ref, _) {
-          final cf = ref.watch(playbackProvider).crossfade;
+          final pc = ref.watch(playbackProvider);
+          final cf = pc.crossfade;
+          return Column(
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: cf,
+                title: const Text('Плавные переходы (кроссфейд)'),
+                subtitle: Text('Затухание в конце и появление в начале трека',
+                    style: TextStyle(color: AppColors.white45, fontSize: 11)),
+                onChanged: (v) {
+                  ref.read(playbackProvider).setCrossfade(v);
+                  ref.read(prefsProvider).setBool('crossfade', v);
+                },
+              ),
+              if (cf)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 4),
+                  child: Row(
+                    children: [
+                      Text('Длительность',
+                          style: TextStyle(
+                              color: AppColors.white60, fontSize: 12)),
+                      Expanded(
+                        child: Slider(
+                          value: pc.crossfadeSeconds.clamp(0.3, 6.0),
+                          min: 0.3,
+                          max: 6.0,
+                          divisions: 57,
+                          label:
+                              '${pc.crossfadeSeconds.toStringAsFixed(1)} с',
+                          onChanged: (v) {
+                            ref.read(playbackProvider).setCrossfadeSeconds(v);
+                            ref
+                                .read(prefsProvider)
+                                .setDouble('crossfade_seconds', v);
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 34,
+                        child: Text('${pc.crossfadeSeconds.toStringAsFixed(1)}с',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          );
+        }),
+        Consumer(builder: (context, ref, _) {
+          final ss = ref.watch(playbackProvider).skipSilence;
           return SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            value: cf,
-            title: const Text('Плавные переходы (кроссфейд)'),
-            subtitle: Text('Затухание в конце и появление в начале трека',
+            value: ss,
+            title: const Text('Пропуск тишины'),
+            subtitle: Text('Пропускать тихие участки в начале/конце трека',
                 style: TextStyle(color: AppColors.white45, fontSize: 11)),
             onChanged: (v) {
-              ref.read(playbackProvider).setCrossfade(v);
-              ref.read(prefsProvider).setBool('crossfade', v);
+              ref.read(playbackProvider).setSkipSilence(v);
+              ref.read(prefsProvider).setBool('skip_silence', v);
             },
           );
         }),

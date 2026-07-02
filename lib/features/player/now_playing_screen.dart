@@ -432,14 +432,21 @@ class NowPlayingScreen extends ConsumerWidget {
             Consumer(builder: (context, ref, _) {
               final timer = ref.watch(sleepTimerProvider);
               final rem = timer.remaining;
+              final afterTrack = ref.watch(playbackProvider).sleepAfterTrack;
+              final active = timer.active || afterTrack;
+              final subtitle = afterTrack
+                  ? 'До конца трека'
+                  : (rem != null ? 'Осталось ${_fmt(rem)}' : null);
               return ListTile(
                 leading: const Icon(Icons.bedtime_outlined),
                 title: const Text('Таймер сна'),
-                subtitle: rem != null ? Text('Осталось ${_fmt(rem)}') : null,
-                trailing: timer.active
+                subtitle: subtitle != null ? Text(subtitle) : null,
+                trailing: active
                     ? TextButton(
-                        onPressed: () =>
-                            ref.read(sleepTimerProvider).cancel(),
+                        onPressed: () {
+                          ref.read(sleepTimerProvider).cancel();
+                          ref.read(playbackProvider).setSleepAfterTrack(false);
+                        },
                         child: const Text('Стоп'))
                     : null,
                 onTap: () {
@@ -469,16 +476,29 @@ class NowPlayingScreen extends ConsumerWidget {
                   style:
                       TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             ),
+            ListTile(
+              leading: const Icon(Icons.music_note),
+              title: const Text('До конца текущего трека'),
+              onTap: () {
+                ref.read(sleepTimerProvider).cancel();
+                ref.read(playbackProvider).setSleepAfterTrack(true);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Пауза после текущего трека')));
+              },
+            ),
             for (final e in options.entries)
               ListTile(
                 title: Text(e.key),
                 onTap: () {
+                  ref.read(playbackProvider).setSleepAfterTrack(false);
                   ref.read(sleepTimerProvider).start(
                         Duration(minutes: e.value),
                         () => ref.read(playbackProvider).pause(),
                       );
                   Navigator.pop(context);
-                  _todo(context, 'Таймер сна: ${e.key}');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Таймер сна: ${e.key}')));
                 },
               ),
           ],

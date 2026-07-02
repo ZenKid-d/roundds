@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
@@ -20,6 +25,39 @@ final _resultsProvider = FutureProvider<List<Track>>((ref) async {
   return results.where((t) => t.source == filter).toList();
 });
 
+/// История поиска (последние запросы), хранится в SharedPreferences.
+final _recentSearchesProvider =
+    StateNotifierProvider<_RecentSearches, List<String>>(
+        (ref) => _RecentSearches(ref.read(prefsProvider)));
+
+class _RecentSearches extends StateNotifier<List<String>> {
+  _RecentSearches(this._prefs)
+      : super(_prefs.getStringList('recent_searches') ?? const []);
+  final SharedPreferences _prefs;
+
+  void add(String q) {
+    q = q.trim();
+    if (q.isEmpty) return;
+    final list = [
+      q,
+      ...state.where((e) => e.toLowerCase() != q.toLowerCase()),
+    ].take(12).toList();
+    state = list;
+    _prefs.setStringList('recent_searches', list);
+  }
+
+  void remove(String q) {
+    final list = state.where((e) => e != q).toList();
+    state = list;
+    _prefs.setStringList('recent_searches', list);
+  }
+
+  void clear() {
+    state = const [];
+    _prefs.setStringList('recent_searches', const []);
+  }
+}
+
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -29,17 +67,62 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
+  Timer? _debounce;
+  List<String> _suggestions = const [];
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onChanged(String v) {
+    _debounce?.cancel();
+    final q = v.trim();
+    if (q.isEmpty) {
+      setState(() => _suggestions = const []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      final s = await _fetchSuggestions(q);
+      if (mounted && _controller.text.trim() == q) {
+        setState(() => _suggestions = s);
+      }
+    });
+  }
+
+  Future<List<String>> _fetchSuggestions(String q) async {
+    try {
+      final r = await ref.read(dioProvider).get<String>(
+            'https://suggestqueries.google.com/complete/search',
+            queryParameters: {'client': 'firefox', 'ds': 'yt', 'q': q},
+            options: Options(responseType: ResponseType.plain),
+          );
+      final data = jsonDecode(r.data ?? '[]');
+      final list =
+          (data is List && data.length > 1) ? data[1] as List : const [];
+      return list.map((e) => e.toString()).take(8).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _submit(String v) {
+    final q = v.trim();
+    if (q.isEmpty) return;
+    _controller.text = q;
+    ref.read(_queryProvider.notifier).state = q;
+    ref.read(_recentSearchesProvider.notifier).add(q);
+    setState(() => _suggestions = const []);
+    FocusScope.of(context).unfocus();
   }
 
   @override
   Widget build(BuildContext context) {
     final results = ref.watch(_resultsProvider);
     final filter = ref.watch(_filterProvider);
+    final submitted = ref.watch(_queryProvider).trim();
 
     return Column(
       children: [
@@ -49,8 +132,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             controller: _controller,
             autofocus: true,
             textInputAction: TextInputAction.search,
-            onSubmitted: (v) =>
-                ref.read(_queryProvider.notifier).state = v,
+            onChanged: _onChanged,
+            onSubmitted: _submit,
             decoration: InputDecoration(
               hintText: 'Поиск по всем сервисам',
               prefixIcon: const Icon(Icons.search),
@@ -59,6 +142,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 onPressed: () {
                   _controller.clear();
                   ref.read(_queryProvider.notifier).state = '';
+                  setState(() => _suggestions = const []);
                 },
               ),
               filled: true,
@@ -92,35 +176,90 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ],
           ),
         ),
-        Expanded(
-          child: results.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('Ошибка поиска:\n$e',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.white45)),
-              ),
+        Expanded(child: _body(results, submitted)),
+      ],
+    );
+  }
+
+  Widget _body(AsyncValue<List<Track>> results, String submitted) {
+    // Пока пользователь печатает — показываем живые подсказки.
+    if (_suggestions.isNotEmpty) {
+      return ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        children: [
+          for (final s in _suggestions)
+            ListTile(
+              leading: Icon(Icons.search, color: AppColors.white45, size: 20),
+              title: Text(s),
+              trailing: Icon(Icons.north_west, color: AppColors.white45, size: 16),
+              onTap: () => _submit(s),
             ),
-            data: (tracks) {
-              if (ref.watch(_queryProvider).trim().isEmpty) {
-                return _hint('Введите запрос — найдём по YouTube, '
-                    'SoundCloud и Яндексу сразу.');
-              }
-              if (tracks.isEmpty) return _hint('Ничего не найдено.');
-              return ListView.builder(
-                itemCount: tracks.length,
-                itemBuilder: (_, i) => TrackRow(
-                  track: tracks[i],
-                  onTap: () =>
-                      playTrack(ref, context, tracks[i], queue: tracks),
-                ),
-              );
-            },
+        ],
+      );
+    }
+
+    return results.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('Ошибка поиска:\n$e',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.white45)),
+        ),
+      ),
+      data: (tracks) {
+        if (submitted.isEmpty) return _recentsOrHint();
+        if (tracks.isEmpty) return _hint('Ничего не найдено.');
+        return ListView.builder(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          itemCount: tracks.length,
+          itemBuilder: (_, i) => TrackRow(
+            track: tracks[i],
+            onTap: () => playTrack(ref, context, tracks[i], queue: tracks),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _recentsOrHint() {
+    final recents = ref.watch(_recentSearchesProvider);
+    if (recents.isEmpty) {
+      return _hint('Введите запрос — найдём по YouTube, '
+          'SoundCloud и Яндексу сразу.');
+    }
+    return ListView(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+          child: Row(
+            children: [
+              Text('Недавние запросы',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.white60,
+                      fontWeight: FontWeight.w500)),
+              const Spacer(),
+              TextButton(
+                onPressed: () =>
+                    ref.read(_recentSearchesProvider.notifier).clear(),
+                child: const Text('Очистить'),
+              ),
+            ],
           ),
         ),
+        for (final q in recents)
+          ListTile(
+            leading: Icon(Icons.history, color: AppColors.white45),
+            title: Text(q),
+            trailing: IconButton(
+              icon: Icon(Icons.close, color: AppColors.white45, size: 18),
+              onPressed: () =>
+                  ref.read(_recentSearchesProvider.notifier).remove(q),
+            ),
+            onTap: () => _submit(q),
+          ),
       ],
     );
   }

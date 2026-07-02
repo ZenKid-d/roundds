@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,8 +50,13 @@ Future<void> main() async {
   handler.localFileResolver = downloads.localPathFor;
   // Радио: докрутка очереди похожими треками.
   handler.radioExtender = reco.similarTo;
-  // Кроссфейд — из сохранённой настройки.
+  // Кроссфейд + длительность + пропуск тишины — из сохранённых настроек.
+  final cfSeconds = prefs.getDouble('crossfade_seconds');
+  if (cfSeconds != null) handler.setCrossfadeSeconds(cfSeconds);
   if (prefs.getBool('crossfade') ?? false) handler.setCrossfade(true);
+  if (prefs.getBool('skip_silence') ?? false) {
+    unawaited(handler.setSkipSilence(true));
+  }
 
   runApp(
     ProviderScope(
