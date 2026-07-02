@@ -94,6 +94,15 @@ Future<void> showTrackMenu(
               },
             );
           }),
+          ListTile(
+            leading: const Icon(Icons.block, size: 22),
+            title: Text('Скрыть артиста «${track.artist}»'),
+            onTap: () {
+              ref.read(libraryProvider).blacklistArtist(track.artist);
+              Navigator.pop(sheetCtx);
+              _snack(context, '«${track.artist}» скрыт из ленты и радио');
+            },
+          ),
         ],
       ),
     ),

@@ -38,7 +38,14 @@ class HomeScreen extends ConsumerWidget {
     final lib = ref.watch(libraryProvider);
     final history = lib.history;
     final feed = ref.watch(feedProvider);
-    final recos = ref.watch(recommendationsProvider).value ?? const <RecoRow>[];
+    final recos = (ref.watch(recommendationsProvider).value ?? const <RecoRow>[])
+        .map((r) => RecoRow(
+            r.title,
+            r.tracks
+                .where((t) => !lib.isArtistBlacklisted(t.artist))
+                .toList()))
+        .where((r) => r.tracks.isNotEmpty)
+        .toList();
     final canRadio = history.isNotEmpty || lib.liked.isNotEmpty;
 
     return RefreshIndicator(
@@ -81,7 +88,10 @@ class HomeScreen extends ConsumerWidget {
           feed.when(
             loading: () => const SliverToBoxAdapter(child: _Loading()),
             error: (e, _) => SliverToBoxAdapter(child: _Error('$e')),
-            data: (tracks) {
+            data: (all) {
+              final tracks = all
+                  .where((t) => !lib.isArtistBlacklisted(t.artist))
+                  .toList();
               if (tracks.isEmpty) {
                 return const SliverToBoxAdapter(
                   child: _Empty('Пусто. Включите источники в Настройках.'),

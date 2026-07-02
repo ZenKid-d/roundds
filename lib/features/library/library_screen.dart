@@ -386,7 +386,10 @@ class _DownloadsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ctl = ref.watch(downloadsProvider);
     final q = ref.watch(_libQueryProvider);
-    final dl = ctl.downloads.where((t) => _matchTrack(t, q)).toList();
+    // Недавно скачанные — сверху.
+    final dl = ctl.downloads.reversed
+        .where((t) => _matchTrack(t, q))
+        .toList();
     final busy =
         ctl.inProgress.where((t) => _matchTrack(t, q)).toList();
     final accent = Theme.of(context).colorScheme.primary;
@@ -664,6 +667,21 @@ class _PlaylistsView extends ConsumerWidget {
                     initial: pl.name);
                 if (name != null && name.isNotEmpty) {
                   await ref.read(libraryProvider).renamePlaylist(pl.id, name);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cleaning_services_outlined),
+              title: const Text('Убрать дубликаты'),
+              onTap: () async {
+                Navigator.pop(context);
+                final n =
+                    await ref.read(libraryProvider).removeDuplicates(pl.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(n == 0
+                          ? 'Дубликатов не найдено'
+                          : 'Удалено дубликатов: $n')));
                 }
               },
             ),

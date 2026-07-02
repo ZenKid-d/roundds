@@ -15,6 +15,7 @@ import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
 import 'appearance_screen.dart';
+import 'blacklist_screen.dart';
 import 'storage_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -199,6 +200,17 @@ class SettingsScreen extends ConsumerWidget {
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const StorageScreen())),
         ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.block),
+          title: const Text('Чёрный список артистов'),
+          subtitle: Text('Скрытые из ленты и радио',
+              style: TextStyle(color: AppColors.white45, fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BlacklistScreen())),
+        ),
+        _AutoDlLikesTile(),
         const SizedBox(height: 16),
         const _Header('Обновление'),
         const _UpdateTile(),
@@ -600,6 +612,29 @@ class _RfBypassState extends ConsumerState<_RfBypass> {
             ),
         ],
       ],
+    );
+  }
+}
+
+class _AutoDlLikesTile extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_AutoDlLikesTile> createState() => _AutoDlLikesTileState();
+}
+
+class _AutoDlLikesTileState extends ConsumerState<_AutoDlLikesTile> {
+  @override
+  Widget build(BuildContext context) {
+    final on = ref.read(prefsProvider).getBool('autodl_likes') ?? false;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: on,
+      title: const Text('Авто-скачивание лайков'),
+      subtitle: Text('Скачивать трек офлайн при добавлении в избранное',
+          style: TextStyle(color: AppColors.white45, fontSize: 11)),
+      onChanged: (v) {
+        ref.read(prefsProvider).setBool('autodl_likes', v);
+        setState(() {});
+      },
     );
   }
 }

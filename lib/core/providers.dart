@@ -11,6 +11,7 @@ import '../domain/models/source_type.dart';
 import '../data/google_yt_import.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
+import '../data/translation_service.dart';
 import 'theme/theme_settings.dart';
 import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
@@ -89,14 +90,25 @@ final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
 final positionProvider = StreamProvider.autoDispose<Duration>(
     (ref) => ref.watch(audioHandlerProvider).player.positionStream);
 
-final libraryProvider = ChangeNotifierProvider<LibraryController>(
-    (ref) => LibraryController(ref.read(prefsProvider)));
+final libraryProvider = ChangeNotifierProvider<LibraryController>((ref) {
+  final c = LibraryController(ref.read(prefsProvider));
+  // Авто-скачивание лайкнутого трека, если включено в настройках.
+  c.onTrackLiked = (track) {
+    if (ref.read(prefsProvider).getBool('autodl_likes') ?? false) {
+      ref.read(downloadsProvider).download(track);
+    }
+  };
+  return c;
+});
 
 final lyricsServiceProvider =
     Provider<LyricsService>((ref) => LyricsService(ref.read(dioProvider)));
 
 final updateServiceProvider =
     Provider<UpdateService>((ref) => UpdateService(ref.read(dioProvider)));
+
+final translationServiceProvider =
+    Provider<TranslationService>((ref) => TranslationService(ref.read(dioProvider)));
 
 final updateControllerProvider = ChangeNotifierProvider<UpdateController>(
     (ref) => UpdateController(ref.read(updateServiceProvider)));

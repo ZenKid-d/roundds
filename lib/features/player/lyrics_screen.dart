@@ -27,6 +27,8 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   int _active = -1;
   final _activeKey = GlobalKey();
   final _scroll = ScrollController();
+  bool _translate = false;
+  final Map<int, String> _tr = {}; // перевод по индексу строки
 
   @override
   void initState() {
@@ -116,6 +118,14 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
+          if (_lines.isNotEmpty)
+            IconButton(
+              tooltip: 'Перевод строки',
+              icon: Icon(Icons.translate,
+                  size: 20,
+                  color: _translate ? Colors.white : Colors.white38),
+              onPressed: () => setState(() => _translate = !_translate),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Text(_lines.isNotEmpty ? 'КАРАОКЕ' : 'ТЕКСТ',
@@ -151,6 +161,19 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
         _active = idx;
         WidgetsBinding.instance.addPostFrameCallback((_) => _centerActive());
       }
+      // Ленивый перевод активной строки.
+      if (_translate &&
+          idx >= 0 &&
+          idx < _lines.length &&
+          !_tr.containsKey(idx)) {
+        _tr[idx] = '';
+        ref
+            .read(translationServiceProvider)
+            .toRussian(_lines[idx].text)
+            .then((t) {
+          if (mounted) setState(() => _tr[idx] = t ?? '');
+        });
+      }
       final vpad = MediaQuery.of(context).size.height * 0.42;
       return ListView.builder(
         controller: _scroll,
@@ -167,24 +190,46 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
                   : dist == 2
                       ? 0.38
                       : 0.24;
+          final translated = _tr[i];
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => ref.read(playbackProvider).seek(_lines[i].time),
             child: Container(
               key: active ? _activeKey : null,
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  fontSize: active ? 25 : 19,
-                  height: 1.28,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                  color: active
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: dim),
-                ),
-                child: Text(_lines[i].text.isEmpty ? '♪' : _lines[i].text),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    style: TextStyle(
+                      fontSize: active ? 25 : 19,
+                      height: 1.28,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                      color: active
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: dim),
+                    ),
+                    child: Text(_lines[i].text.isEmpty ? '♪' : _lines[i].text),
+                  ),
+                  if (_translate &&
+                      active &&
+                      translated != null &&
+                      translated.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5),
+                      child: Text(
+                        translated,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.2,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           );

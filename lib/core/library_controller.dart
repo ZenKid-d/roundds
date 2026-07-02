@@ -20,11 +20,51 @@ class LibraryController extends ChangeNotifier {
   final List<Track> _liked = [];
   final Map<String, Track> _statTrack = {};
   final Map<String, int> _statCount = {};
+  final Set<String> _blacklist = {}; // артисты в нижнем регистре
   int _totalListenedMs = 0;
+
+  /// Вызывается при добавлении лайка (для авто-скачивания). Ставится в провайдере.
+  void Function(Track track)? onTrackLiked;
 
   List<Track> get history => List.unmodifiable(_history);
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
   List<Track> get liked => List.unmodifiable(_liked);
+
+  // --- Чёрный список артистов ---
+  List<String> get blacklistedArtists => _blacklist.toList()..sort();
+  bool isArtistBlacklisted(String artist) =>
+      _blacklist.contains(artist.toLowerCase());
+  Future<void> blacklistArtist(String artist) async {
+    if (artist.trim().isEmpty) return;
+    _blacklist.add(artist.toLowerCase());
+    await _prefs
+        .setStringList('blacklist_artists', _blacklist.toList());
+    notifyListeners();
+  }
+
+  Future<void> unblacklistArtist(String artist) async {
+    _blacklist.remove(artist.toLowerCase());
+    await _prefs
+        .setStringList('blacklist_artists', _blacklist.toList());
+    notifyListeners();
+  }
+
+  /// Убирает дубликаты треков в плейлисте (по uid и по «артист — название»).
+  Future<int> removeDuplicates(String playlistId) async {
+    final pl = _playlists.firstWhere((e) => e.id == playlistId);
+    final seenUid = <String>{};
+    final seenName = <String>{};
+    final before = pl.tracks.length;
+    pl.tracks.retainWhere((t) {
+      final nameKey = '${t.artist.toLowerCase()}—${t.title.toLowerCase()}';
+      final dupUid = !seenUid.add(t.uid);
+      final dupName = !seenName.add(nameKey);
+      return !(dupUid || dupName);
+    });
+    await _persistPlaylists();
+    notifyListeners();
+    return before - pl.tracks.length;
+  }
 
   void _load() {
     final h = _prefs.getString('history');
@@ -48,6 +88,9 @@ class LibraryController extends ChangeNotifier {
         ..addAll((jsonDecode(l) as List)
             .map((e) => Track.fromJson((e as Map).cast<String, dynamic>())));
     }
+    _blacklist
+      ..clear()
+      ..addAll(_prefs.getStringList('blacklist_artists') ?? const []);
     final s = _prefs.getString('stats');
     if (s != null) {
       for (final e in (jsonDecode(s) as List)) {
@@ -130,6 +173,7 @@ class LibraryController extends ChangeNotifier {
       _liked.removeWhere((e) => e.uid == t.uid);
     } else {
       _liked.insert(0, t);
+      onTrackLiked?.call(t); // авто-скачивание, если включено
     }
     await _prefs.setString(
         'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));

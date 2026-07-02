@@ -38,38 +38,70 @@ class ChartsScreen extends ConsumerWidget {
   }
 }
 
-class _SourceCharts extends ConsumerWidget {
+class _SourceCharts extends StatelessWidget {
   const _SourceCharts({required this.source});
   final SourceType source;
 
   @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+          child: Row(
+            children: [
+              ServiceBadge(source, size: 24),
+              const SizedBox(width: 8),
+              Text(source.label,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        _ChartRow(
+            source: source, title: '🔥 Топ сейчас', query: 'top hits 2025'),
+        _ChartRow(
+            source: source,
+            title: '🆕 Свежие релизы',
+            query: 'new music 2025'),
+      ],
+    );
+  }
+}
+
+class _ChartRow extends ConsumerWidget {
+  const _ChartRow(
+      {required this.source, required this.title, required this.query});
+  final SourceType source;
+  final String title;
+  final String query;
+
+  @override
   Widget build(BuildContext context, WidgetRef ref) {
     return FutureBuilder<List<Track>>(
-      future: ref.read(aggregatorProvider).sourceFor(source).feed(limit: 20),
+      future:
+          ref.read(aggregatorProvider).sourceFor(source).search(query, limit: 20),
       builder: (context, snap) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-              child: Row(
-                children: [
-                  ServiceBadge(source, size: 22),
-                  const SizedBox(width: 8),
-                  Text('Чарт · ${source.shortLabel}',
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w500)),
-                ],
-              ),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500)),
             ),
             SizedBox(
               height: 172,
               child: snap.connectionState != ConnectionState.done
                   ? const Center(child: CircularProgressIndicator())
                   : (snap.data == null || snap.data!.isEmpty)
-                      ? Center(
+                      ? Padding(
+                          padding: const EdgeInsets.only(left: 16),
                           child: Text('Недоступно',
-                              style: TextStyle(color: AppColors.white45)))
+                              style: TextStyle(color: AppColors.white45)),
+                        )
                       : ListView.separated(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
