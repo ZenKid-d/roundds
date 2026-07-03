@@ -51,6 +51,7 @@ class HomeScreen extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async {
+        ref.read(aggregatorProvider).clearCache();
         ref.invalidate(recommendationsProvider);
         ref.invalidate(feedProvider);
         await ref.read(feedProvider.future);

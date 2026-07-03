@@ -91,23 +91,28 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
       for (var i = 0; i < b.length; i++) {
         _smooth[i] = max(b[i], _smooth[i] * 0.80);
       }
+      // Реальные данные сами двигают полосы через setState — декоративный
+      // контроллер тут не нужен, глушим его, чтобы не гонять двойные ребилды.
+      if (_c.isAnimating) _c.stop();
       setState(() {});
     });
   }
 
-  void _stopReal() {
+  void _stopReal({bool resumeDecor = true}) {
     if (!_started && _sub == null) return;
     _sub?.cancel();
     _sub = null;
     _started = false;
     _smooth = [];
     VisualizerChannel.instance.stop();
+    // Реальный захват выключен — возвращаем декоративную волну.
+    if (resumeDecor && mounted && !_c.isAnimating) _c.repeat();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _stopReal();
+    _stopReal(resumeDecor: false);
     _c.dispose();
     super.dispose();
   }
@@ -140,30 +145,53 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
     return RepaintBoundary(
       child: SizedBox(
         height: widget.height,
+        width: double.infinity,
         child: AnimatedBuilder(
           animation: _c,
-          builder: (_, __) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: List.generate(widget.bars, (i) {
-                final v = _valueAt(i);
-                final h =
-                    (widget.height * (0.12 + 0.88 * v)).clamp(3.0, widget.height);
-                return Container(
-                  width: 3,
-                  height: h,
-                  decoration: BoxDecoration(
-                    color: widget.color
-                        .withValues(alpha: widget.playing ? 0.85 : 0.35),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                );
-              }),
-            );
-          },
+          builder: (_, __) => CustomPaint(
+            painter: _BarsPainter(
+              values: List<double>.generate(widget.bars, _valueAt),
+              color: widget.color
+                  .withValues(alpha: widget.playing ? 0.85 : 0.35),
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+/// Рисует спектр одним слоем (вместо десятков виджетов-полос на кадр).
+/// Полосы шириной 3px с равными промежутками, вертикально по центру.
+class _BarsPainter extends CustomPainter {
+  _BarsPainter({required this.values, required this.color});
+
+  final List<double> values;
+  final Color color;
+
+  static const _barW = 3.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final n = values.length;
+    if (n == 0) return;
+    final gap = n > 1 ? (size.width - _barW * n) / (n - 1) : 0.0;
+    final paint = Paint()..color = color;
+    const radius = Radius.circular(3);
+    for (var i = 0; i < n; i++) {
+      final h = (size.height * (0.12 + 0.88 * values[i]))
+          .clamp(3.0, size.height);
+      final x = i * (_barW + gap);
+      final top = (size.height - h) / 2;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(x, top, _barW, h), radius),
+        paint,
+      );
+    }
+  }
+
+  // Painter создаётся заново только при ребилде (тик анимации или FFT-колбэк),
+  // и каждый такой ребилд обязан перерисоваться — поэтому всегда true.
+  @override
+  bool shouldRepaint(_BarsPainter old) => true;
 }

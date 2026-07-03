@@ -35,12 +35,22 @@ final effectiveAccentProvider = Provider<Color>((ref) {
   }
 });
 
+/// Кэш вычисленных акцентов по URL обложки. `PaletteGenerator` декодирует
+/// картинку и квантует цвета на UI-потоке — это заметный микрофриз в момент
+/// смены трека. Повторные треки (перемотка назад/вперёд, повтор, радио с
+/// возвратами) берут готовый цвет из кэша вместо пересчёта.
+final _accentCache = <String, Color>{};
+
 /// Динамический акцент: первый достаточно насыщенный цвет обложки.
 /// Если обложка серая/чёрно-белая (нет цветного оттенка) — акцент белый
 /// (не выдумываем случайный оттенок для серого).
 final accentProvider = FutureProvider<Color>((ref) async {
   final url = ref.watch(currentArtworkProvider);
   if (url == null || url.isEmpty) return AppColors.defaultAccent;
+  final cached = _accentCache[url];
+  if (cached != null) return cached;
+  // Не даём кэшу расти бесконечно за очень долгую сессию.
+  if (_accentCache.length > 200) _accentCache.remove(_accentCache.keys.first);
   try {
     final palette = await PaletteGenerator.fromImageProvider(
       CachedNetworkImageProvider(url),
@@ -59,9 +69,14 @@ final accentProvider = FutureProvider<Color>((ref) async {
 
     // Берём первый с реальным оттенком (насыщенность выше порога).
     for (final c in candidates) {
-      if (HSLColor.fromColor(c).saturation >= 0.22) return _ensureVivid(c);
+      if (HSLColor.fromColor(c).saturation >= 0.22) {
+        final accent = _ensureVivid(c);
+        _accentCache[url] = accent;
+        return accent;
+      }
     }
     // Обложка чёрно-белая — акцент белый.
+    _accentCache[url] = Colors.white;
     return Colors.white;
   } catch (_) {
     return AppColors.defaultAccent;

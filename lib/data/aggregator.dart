@@ -12,8 +12,27 @@ class Aggregator {
   final Map<SourceType, MusicSource> _sources;
   Set<SourceType> _enabled;
 
+  // Кэш ленты и поиска: сетевые запросы по всем источникам дороги, а лента и
+  // повторные запросы (жанр-радио, страница артиста) часто одинаковы. TTL
+  // держит данные свежими, но убирает лишние походы в сеть при каждом входе.
+  static const _feedTtl = Duration(minutes: 6);
+  static const _searchTtl = Duration(minutes: 5);
+  List<Track>? _feedCache;
+  DateTime? _feedAt;
+  final Map<String, ({DateTime at, List<Track> tracks})> _searchCache = {};
+
   Set<SourceType> get enabled => _enabled;
-  void setEnabled(Set<SourceType> e) => _enabled = e;
+  void setEnabled(Set<SourceType> e) {
+    _enabled = e;
+    clearCache();
+  }
+
+  /// Сбрасывает кэш ленты и поиска (смена источников, pull-to-refresh).
+  void clearCache() {
+    _feedCache = null;
+    _feedAt = null;
+    _searchCache.clear();
+  }
 
   Iterable<MusicSource> get _active =>
       _sources.entries.where((e) => _enabled.contains(e.key)).map((e) => e.value);
@@ -26,6 +45,11 @@ class Aggregator {
   /// Поиск по всем включённым источникам, результаты «переплетаются»
   /// (round-robin), чтобы лента не была занята одним сервисом.
   Future<List<Track>> search(String query, {int perSource = 15}) async {
+    final key = '$query::$perSource';
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchTtl) {
+      return hit.tracks;
+    }
     final futures = _active.map((s) async {
       try {
         return await s.search(query, limit: perSource);
@@ -34,10 +58,23 @@ class Aggregator {
       }
     });
     final lists = await Future.wait(futures);
-    return _interleave(lists);
+    final result = _interleave(lists);
+    if (result.isNotEmpty) {
+      _searchCache[key] = (at: DateTime.now(), tracks: result);
+      if (_searchCache.length > 32) {
+        _searchCache.remove(_searchCache.keys.first);
+      }
+    }
+    return result;
   }
 
   Future<List<Track>> feed({int perSource = 12}) async {
+    final cached = _feedCache;
+    final at = _feedAt;
+    if (cached != null && at != null &&
+        DateTime.now().difference(at) < _feedTtl) {
+      return cached;
+    }
     final futures = _active.map((s) async {
       try {
         return await s.feed(limit: perSource);
@@ -46,7 +83,12 @@ class Aggregator {
       }
     });
     final lists = await Future.wait(futures);
-    return _interleave(lists);
+    final result = _interleave(lists);
+    if (result.isNotEmpty) {
+      _feedCache = result;
+      _feedAt = DateTime.now();
+    }
+    return result;
   }
 
   Future<PlayableStream> resolveStream(Track track) =>
