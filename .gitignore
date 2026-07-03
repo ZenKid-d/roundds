@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Release signing — НИКОГДА не коммитить ключ и пароли
+key.properties
+android/key.properties
+*.jks
+*.keystore

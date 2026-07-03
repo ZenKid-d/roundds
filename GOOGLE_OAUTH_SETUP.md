@@ -34,6 +34,12 @@
 Client ID: пропишу его как `serverClientId` в коде.
 
 ## Важно про подпись
-Этот SHA-1 — от **отладочного** ключа (`~/.android/debug.keystore`), которым
-Flutter подписывает и release-APK по умолчанию. Если позже добавишь собственный
-release-keystore, зарегистрируй в Google Cloud и его SHA-1.
+Релизы теперь подписываются **выделенным release-ключом** (`roundds-release.jks`,
+см. [RELEASING.md](RELEASING.md)), а не debug-ключом. В OAuth-клиент Android
+нужно добавить SHA-1 этого ключа:
+```
+45:F4:2C:F9:56:37:D1:6B:06:DA:CC:C6:7D:AD:ED:0D:1E:79:9E:C0
+```
+Старый debug-SHA-1 (`6B:FB:0F:90:79:77:6F:AD:A9:A3:C9:26:DB:E2:B0:27:28:7E:04:2E`)
+можно оставить — он всё ещё нужен для локальных debug-сборок (`flutter run`).
+В один OAuth-клиент можно добавить оба отпечатка.

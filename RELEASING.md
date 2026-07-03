@@ -2,35 +2,55 @@
 
 Сборка и публикация APK автоматизированы через GitHub Actions
 ([.github/workflows/release.yml](.github/workflows/release.yml)). Workflow
-собирает release-APK, подписывает его **тем же debug-ключом**, что и локально,
-и публикует релиз в публичный репозиторий **`ZenKid-d/roundds-releases`** —
-оттуда приложение забирает обновления
+собирает release-APK, подписывает его **выделенным release-ключом**
+(`roundds-release.jks`) и публикует релиз в публичный репозиторий
+**`ZenKid-d/roundds-releases`** — оттуда приложение забирает обновления
 ([update_service.dart](lib/core/update_service.dart)).
 
-## Разовая настройка (секреты)
+Подпись читается из `android/key.properties` (в гит не коммитится — см.
+`.gitignore`). Если файла нет, release подпишется debug-ключом, чтобы
+локальный `flutter run --release` работал без ключа.
+
+## ⚠️ Разовая миграция подписи (важно!)
+
+Проект перешёл со старого debug-ключа на новый release-ключ. Последствия:
+
+1. **Google Cloud.** Новый SHA-1 нужно добавить в OAuth-клиент Android
+   (иначе вход через Google для импорта лайков YT перестанет работать):
+   ```
+   45:F4:2C:F9:56:37:D1:6B:06:DA:CC:C6:7D:AD:ED:0D:1E:79:9E:C0
+   ```
+   Google Cloud Console → APIs & Services → Credentials → OAuth client
+   (Android, package `com.roundds.roundds`) → добавить этот SHA-1
+   (старый `6B:FB:…` можно оставить или удалить). См.
+   [GOOGLE_OAUTH_SETUP.md](GOOGLE_OAUTH_SETUP.md).
+2. **Установленные копии.** APK, подписанный новым ключом, **не встанет
+   поверх** старой установки (конфликт подписи) — нужна разовая
+   переустановка приложения. Дальше обновления снова бесшовные.
+
+Файлы ключа лежат вне репозитория:
+`~/roundds-release.jks` и `~/roundds-release.jks.base64`.
+**Забэкапь их и пароль в надёжное место** — потеря ключа = снова миграция.
+
+## Разовая настройка (секреты GitHub)
 
 Settings → Secrets and variables → Actions → **New repository secret**:
 
-### 1. `ANDROID_DEBUG_KEYSTORE_BASE64`
-База64 твоего локального debug-ключа. Именно он даёт SHA-1
-`6B:FB:0F:90:…`, зарегистрированный в Google Cloud для входа, и позволяет
-обновлениям вставать поверх уже установленных копий.
+| Секрет | Значение |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | содержимое `~/roundds-release.jks.base64` (одной строкой) |
+| `ANDROID_KEYSTORE_PASSWORD` | пароль хранилища |
+| `ANDROID_KEY_ALIAS` | `roundds` |
+| `ANDROID_KEY_PASSWORD` | пароль ключа (совпадает с паролем хранилища) |
+| `RELEASES_TOKEN` | fine-grained PAT с **Contents: write** на `ZenKid-d/roundds-releases` |
 
-```bash
-base64 -w0 ~/.android/debug.keystore        # Linux
-base64 -i ~/.android/debug.keystore | tr -d '\n'   # macOS
-```
-Скопируй вывод целиком в значение секрета.
+`RELEASES_TOKEN` создаётся в GitHub → Settings → Developer settings →
+Fine-grained tokens (обычный `GITHUB_TOKEN` в чужой репозиторий писать не
+может).
 
-> ⚠️ Debug-ключ — не «безопасный» ключ подписи, но проект и так подписывался
-> им (см. `android/app/build.gradle.kts`, `signingConfigs.getByName("debug")`).
-> Сохраняем как есть, чтобы не ломать вход Google и цепочку обновлений.
-
-### 2. `RELEASES_TOKEN`
-Fine-grained Personal Access Token с доступом к репозиторию
-`ZenKid-d/roundds-releases` и правом **Contents: Read and write**
-(GitHub → Settings → Developer settings → Fine-grained tokens). Обычный
-`GITHUB_TOKEN` не годится — он не может писать в другой репозиторий.
+> Пароль и base64 были показаны при генерации ключа. Если потерял — можно
+> перевыпустить ключ (`keytool -genkeypair …`), но тогда снова миграция
+> подписи (см. выше).
 
 ## Как выпустить релиз
 

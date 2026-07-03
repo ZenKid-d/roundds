@@ -8,10 +8,12 @@ name: Release
 #   • ручной запуск из вкладки Actions (workflow_dispatch), версия вводится руками
 #
 # Нужные секреты репозитория (Settings → Secrets and variables → Actions):
-#   ANDROID_DEBUG_KEYSTORE_BASE64 — base64 файла ~/.android/debug.keystore
-#       (тот же ключ, что и локально: сохраняет SHA-1, вход Google и
-#        обновление поверх уже установленных копий).
-#         base64 -w0 ~/.android/debug.keystore         # Linux
+#   ANDROID_KEYSTORE_BASE64     — base64 release-keystore (roundds-release.jks)
+#   ANDROID_KEYSTORE_PASSWORD   — пароль хранилища
+#   ANDROID_KEY_ALIAS           — алиас ключа (roundds)
+#   ANDROID_KEY_PASSWORD        — пароль ключа
+#       SHA-1 этого ключа должен быть зарегистрирован в Google Cloud, иначе
+#       вход через Google (импорт лайков YT) не заработает. См. RELEASING.md.
 #   RELEASES_TOKEN — fine-grained PAT с правом Contents: write на
 #       репозиторий ZenKid-d/roundds-releases (обычный GITHUB_TOKEN писать в
 #       другой репозиторий не может).
@@ -80,15 +82,25 @@ jobs:
           echo "tag=v$V"         >> "$GITHUB_OUTPUT"
           echo "Version=$V  code=$CODE"
 
-      - name: Restore debug keystore
+      - name: Restore release signing config
         env:
-          KS: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$KS" ]; then
-            echo "::error::Секрет ANDROID_DEBUG_KEYSTORE_BASE64 не задан"; exit 1
-          fi
-          mkdir -p "$HOME/.android"
-          echo "$KS" | base64 -d > "$HOME/.android/debug.keystore"
+          for name in KS_B64 KS_PW KEY_ALIAS KEY_PW; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Секрет для $name не задан"; exit 1
+            fi
+          done
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/roundds-release.jks"
+          cat > android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/roundds-release.jks
+          storePassword=$KS_PW
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PW
+          EOF
 
       - name: Pub get
         run: flutter pub get
