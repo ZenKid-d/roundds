@@ -30,7 +30,7 @@ class PlayerVisualizer extends ConsumerStatefulWidget {
 }
 
 class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _c = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1400));
 
@@ -42,7 +42,18 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _c.repeat(); // анимируем всегда — и при игре, и на паузе
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // В фоне/при выключенном экране останавливаем нативный захват спектра.
+    if (state == AppLifecycleState.resumed) {
+      _apply();
+    } else {
+      _stopReal();
+    }
   }
 
   @override
@@ -95,6 +106,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _stopReal();
     _c.dispose();
     super.dispose();

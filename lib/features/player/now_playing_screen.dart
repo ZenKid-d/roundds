@@ -451,7 +451,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   style: const TextStyle(fontSize: 11, color: Colors.white70)),
             ),
             TextButton(
-              onPressed: () => ref.read(playbackProvider).playTrack(track),
+              onPressed: () => ref.read(playbackProvider).retry(),
               child: const Text('Повтор'),
             ),
           ],

@@ -208,35 +208,53 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
     mediaItem.add(_toMediaItem(track));
     onTrackStarted?.call(track);
-    try {
-      final local = localFileResolver?.call(track.uid);
-      if (local != null) {
-        await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
-      } else {
-        PlayableStream stream;
-        if (_preUid == track.uid &&
-            _preStream != null &&
-            !_preStream!.isExpired) {
-          stream = _preStream!; // готовая ссылка из предзагрузки
+    // До 2 попыток: 1-я может взять предзагруженную ссылку, 2-я — свежий резолв
+    // (истёкшая/битая ссылка, временный сбой источника).
+    Object? lastErr;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final local = localFileResolver?.call(track.uid);
+        if (local != null) {
+          await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
         } else {
-          stream = await _aggregator.resolveStreamWithFallback(track);
+          PlayableStream stream;
+          if (attempt == 0 &&
+              _preUid == track.uid &&
+              _preStream != null &&
+              !_preStream!.isExpired) {
+            stream = _preStream!;
+          } else {
+            stream = await _aggregator.resolveStreamWithFallback(track);
+          }
+          _preUid = null;
+          _preStream = null;
+          await _player.setAudioSource(
+            AudioSource.uri(stream.uri, headers: stream.headers),
+          );
         }
-        _preUid = null;
-        _preStream = null;
-        await _player.setAudioSource(
-          AudioSource.uri(stream.uri, headers: stream.headers),
-        );
+        _player.play();
+        _error = null;
+        lastErr = null;
+        unawaited(_preloadNext());
+        unawaited(_maybeExtendRadio());
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
       }
-      _player.play();
-      unawaited(_preloadNext());
-      unawaited(_maybeExtendRadio());
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _loading = false;
-      _notify();
     }
+    if (lastErr != null) {
+      _error = 'Не удалось воспроизвести трек — источник недоступен. '
+          'Нажмите «Повтор» или попробуйте другой источник.';
+    }
+    _loading = false;
+    _notify();
   }
+
+  /// Повторная попытка воспроизвести текущий трек.
+  Future<void> retry() => _load();
 
   /// Запуск радио: очередь из похожих, дальше докручивается на лету.
   Future<void> playRadio(Track seed, List<Track> queue) async {
