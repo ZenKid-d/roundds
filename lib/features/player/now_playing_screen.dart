@@ -327,12 +327,25 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 ? SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
-                        value: downloads.progressFor(track.uid) == 0
-                            ? null
-                            : downloads.progressFor(track.uid),
-                        strokeWidth: 2,
-                        color: accent))
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                            value: downloads.progressFor(track.uid) == 0
+                                ? null
+                                : downloads.progressFor(track.uid),
+                            strokeWidth: 2,
+                            color: accent),
+                        if (downloads.progressFor(track.uid) > 0)
+                          Text(
+                              '${(downloads.progressFor(track.uid) * 100).round()}',
+                              style: TextStyle(
+                                  fontSize: 7,
+                                  height: 1,
+                                  color: accent,
+                                  fontWeight: FontWeight.w600)),
+                      ],
+                    ))
                 : Icon(
                     downloaded
                         ? Icons.download_done

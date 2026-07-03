@@ -25,8 +25,21 @@ class TrackDownloadStatus extends ConsumerWidget {
         child: SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-              value: p == 0 ? null : p, strokeWidth: 2, color: accent),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                  value: p == 0 ? null : p, strokeWidth: 2, color: accent),
+              // Число процентов внутри кольца, когда прогресс определён.
+              if (p > 0)
+                Text('${(p * 100).round()}',
+                    style: TextStyle(
+                        fontSize: 7.5,
+                        height: 1,
+                        color: accent,
+                        fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       );
     }
