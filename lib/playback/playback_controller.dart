@@ -65,18 +65,24 @@ class PlaybackController extends ChangeNotifier {
     onNowPlaying?.call(t);
   }
 
+  /// Правило скроббла Last.fm: трек короче 30 сек не считается; иначе нужно
+  /// прослушать не меньше половины (но не более 4 мин) и не меньше 20 сек.
+  /// При неизвестной длительности порог — 60 сек.
+  @visibleForTesting
+  static bool shouldScrobble({required int durationMs, required int playedMs}) {
+    if (durationMs > 0 && durationMs < 30000) return false;
+    final threshold = durationMs > 0
+        ? (durationMs ~/ 2 < 240000 ? durationMs ~/ 2 : 240000)
+        : 60000;
+    return playedMs >= threshold && playedMs >= 20000;
+  }
+
   void _finalizeScrobble() {
     final t = _npTrack;
     if (t == null) return;
     _accumPlayed();
     final dur = t.duration?.inMilliseconds ?? 0;
-    if (dur > 0 && dur < 30000) {
-      _npTrack = null;
-      return; // трек короче 30 сек — не скроббим
-    }
-    final threshold =
-        dur > 0 ? (dur ~/ 2 < 240000 ? dur ~/ 2 : 240000) : 60000;
-    if (_playedMs >= threshold && _playedMs >= 20000) {
+    if (shouldScrobble(durationMs: dur, playedMs: _playedMs)) {
       onScrobble?.call(t, _npStartedEpoch);
     }
     _npTrack = null;

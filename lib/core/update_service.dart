@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -40,7 +41,7 @@ class UpdateService {
     }
     if (apkUrl == null || latest.isEmpty) return null;
     final info = await PackageInfo.fromPlatform();
-    if (_isNewer(latest, info.version)) {
+    if (isNewer(latest, info.version)) {
       return UpdateInfo(version: latest, notes: notes, apkUrl: apkUrl);
     }
     return null;
@@ -84,7 +85,10 @@ class UpdateService {
     } catch (_) {}
   }
 
-  bool _isNewer(String latest, String current) {
+  /// Строго ли `latest` новее `current` (semver major.minor.patch;
+  /// нечисловые суффиксы и недостающие компоненты трактуются как 0).
+  @visibleForTesting
+  static bool isNewer(String latest, String current) {
     final a = _parts(latest);
     final b = _parts(current);
     for (var i = 0; i < 3; i++) {
@@ -93,7 +97,7 @@ class UpdateService {
     return false;
   }
 
-  List<int> _parts(String v) {
+  static List<int> _parts(String v) {
     final p = v
         .split('.')
         .map((x) => int.tryParse(x.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
