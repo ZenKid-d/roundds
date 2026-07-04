@@ -94,6 +94,21 @@ class Aggregator {
   Future<PlayableStream> resolveStream(Track track) =>
       _sources[track.source]!.resolveStream(track);
 
+  /// Ищет ту же песню на YouTube (для фолбэка загрузки/воспроизведения, когда
+  /// родной источник отдаёт HLS или недоступен). null — YouTube выключен/не
+  /// нашёл. Для YouTube-трека возвращает его же.
+  Future<Track?> youtubeMatch(Track track) async {
+    if (track.source == SourceType.youtube) return track;
+    final yt = _sources[SourceType.youtube];
+    if (yt == null || !_enabled.contains(SourceType.youtube)) return null;
+    try {
+      final r = await yt.search('${track.artist} ${track.title}'.trim(), limit: 1);
+      return r.isNotEmpty ? r.first : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Резолв с умной маршрутизацией: если родной источник не отдал поток
   /// (например, трек на SoundCloud доступен только по подписке Go+, или ошибка),
   /// берём ту же песню из YouTube — бесплатного источника. Это НЕ обход

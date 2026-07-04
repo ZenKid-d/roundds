@@ -125,6 +125,40 @@ void main() {
     });
   });
 
+  group('Aggregator.youtubeMatch', () {
+    test('находит ту же песню на YouTube для не-YT источника', () async {
+      final yt = FakeSource(SourceType.youtube,
+          results: [track(SourceType.youtube, 'ytid')]);
+      final sc = FakeSource(SourceType.soundcloud);
+      final agg = Aggregator(
+        {SourceType.youtube: yt, SourceType.soundcloud: sc},
+        enabled: {SourceType.youtube, SourceType.soundcloud},
+      );
+
+      final m = await agg.youtubeMatch(track(SourceType.soundcloud, 'sc1'));
+      expect(m?.uid, 'youtube:ytid');
+    });
+
+    test('для YouTube-трека возвращает его же', () async {
+      final yt = FakeSource(SourceType.youtube);
+      final agg = Aggregator({SourceType.youtube: yt},
+          enabled: {SourceType.youtube});
+      final t = track(SourceType.youtube, 'x');
+      expect((await agg.youtubeMatch(t))?.uid, t.uid);
+    });
+
+    test('YouTube выключен → null', () async {
+      final yt = FakeSource(SourceType.youtube,
+          results: [track(SourceType.youtube, 'ytid')]);
+      final sc = FakeSource(SourceType.soundcloud);
+      final agg = Aggregator(
+        {SourceType.youtube: yt, SourceType.soundcloud: sc},
+        enabled: {SourceType.soundcloud},
+      );
+      expect(await agg.youtubeMatch(track(SourceType.soundcloud, 'sc1')), isNull);
+    });
+  });
+
   group('Aggregator TTL-кэш', () {
     test('повторный поиск в пределах TTL не бьёт в источник', () async {
       final yt = FakeSource(SourceType.youtube,

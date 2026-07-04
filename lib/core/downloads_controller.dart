@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
+import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import 'notifications.dart';
 
@@ -92,28 +93,16 @@ class DownloadsController extends ChangeNotifier {
         }
       }
 
-      // Сначала пробуем нативную загрузку источника: YouTube отдаёт аудио
-      // чанками, и простой GET по googlevideo-ссылке часто падает с 403 (при
-      // том что плеер её стримит). Не смог — грузим по URL через dio, сохраняя
-      // кросс-источниковый фолбэк (resolveStreamWithFallback).
-      final native = await _aggregator
-          .sourceFor(track.source)
-          .downloadTo(track, path, onProgress: onProg);
-      if (!native) {
-        final stream = await _aggregator.resolveStreamWithFallback(track);
-        await _dio.download(
-          stream.uri.toString(),
-          path,
-          options: Options(headers: stream.headers),
-          onReceiveProgress: onProg,
-        );
-      }
-      _tracks[track.uid] = track;
-      _paths[track.uid] = path;
-      await _persist();
-      ok = true;
-      if (notify) {
-        await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
+      ok = await _downloadTrackTo(track, path, onProg);
+      if (ok) {
+        _tracks[track.uid] = track;
+        _paths[track.uid] = path;
+        await _persist();
+        if (notify) {
+          await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
+        }
+      } else {
+        _safeDelete(path); // подчистим частичный/битый файл
       }
     } catch (e) {
       debugPrint('Не удалось скачать ${track.uid}: $e');
@@ -125,6 +114,65 @@ class DownloadsController extends ChangeNotifier {
       notifyListeners();
     }
     return ok;
+  }
+
+  /// Скачивает трек в [path], пробуя стратегии по порядку до валидного файла:
+  ///  1. Нативный загрузчик источника (YouTube качает чанками — обходит 403).
+  ///  2. Прямой GET progressive-ссылки через dio (HLS так скачать нельзя —
+  ///     это плейлист `.m3u8`, а не аудио).
+  ///  3. Та же песня с YouTube нативно (если источник отдал только HLS/не смог).
+  /// Каждый успех проверяется на «похоже на аудио» (размер файла).
+  Future<bool> _downloadTrackTo(
+      Track track, String path, void Function(int, int) onProg) async {
+    // 1. Нативный загрузчик источника.
+    if (await _aggregator.sourceFor(track.source).downloadTo(track, path,
+            onProgress: onProg) &&
+        _looksValid(path)) {
+      return true;
+    }
+    // 2. По URL через dio (progressive), не HLS.
+    try {
+      final stream = await _aggregator.resolveStreamWithFallback(track);
+      if (!_isHls(stream.uri)) {
+        await _dio.download(stream.uri.toString(), path,
+            options: Options(headers: stream.headers),
+            onReceiveProgress: onProg);
+        if (_looksValid(path)) return true;
+      }
+    } catch (_) {/* пробуем YouTube-фолбэк ниже */}
+    // 3. Источник отдал только HLS / не смог — качаем ту же песню с YouTube.
+    if (track.source != SourceType.youtube) {
+      final yt = await _aggregator.youtubeMatch(track);
+      if (yt != null &&
+          await _aggregator.sourceFor(SourceType.youtube).downloadTo(yt, path,
+              onProgress: onProg) &&
+          _looksValid(path)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// HLS-плейлист (`.m3u8`) нельзя скачать простым GET — это не аудиофайл.
+  bool _isHls(Uri uri) =>
+      uri.path.toLowerCase().contains('.m3u8') ||
+      uri.toString().toLowerCase().contains('m3u8');
+
+  /// Грубая проверка целостности: настоящий аудиофайл заведомо больше 16 КБ
+  /// (m3u8-манифест/пустышка — единицы КБ). Отсекает «скачанный» мусор.
+  bool _looksValid(String path) {
+    try {
+      return File(path).lengthSync() >= 16 * 1024;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _safeDelete(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   /// Скачать весь плейлист. Треки качаются ПАРАЛЛЕЛЬНО (пул воркеров) — это
