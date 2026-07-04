@@ -15,7 +15,12 @@ enum LoopMode { off, all, one }
 /// отдаёт состояние в уведомление/локскрин и принимает оттуда команды.
 class RoundsAudioHandler extends BaseAudioHandler {
   RoundsAudioHandler(this._aggregator) {
-    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    // Маппим события в состояние вручную (не .pipe), чтобы ловить ошибки
+    // воспроизведения и не рвать поток состояния при сбое источника.
+    _player.playbackEventStream.listen(
+      (event) => playbackState.add(_transformEvent(event)),
+      onError: _onPlaybackError,
+    );
     _player.playerStateStream.listen((s) {
       if (s.processingState == ProcessingState.completed) _onComplete();
     });
@@ -87,6 +92,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
   // Предзагрузка следующего трека.
   String? _preUid;
   PlayableStream? _preStream;
+
+  // Авто-восстановление при обрыве протухшего потока во время игры.
+  bool _recovering = false;
+  int _recoverAttempts = 0;
+  String? _recoverUid;
 
   void Function()? onUiChanged;
   void _notify() => onUiChanged?.call();
@@ -254,7 +264,46 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   /// Повторная попытка воспроизвести текущий трек.
-  Future<void> retry() => _load();
+  Future<void> retry() {
+    _recoverUid = null; // ручной повтор — сбросить бюджет авто-восстановления
+    return _load();
+  }
+
+  /// Ошибка воспроизведения от плеера (напр. истёкшая ссылка на поток посреди
+  /// трека). Пытаемся прозрачно перерезолвить и продолжить с той же позиции,
+  /// не дёргая пользователя ручным «Повтором».
+  void _onPlaybackError(Object e, StackTrace st) {
+    if (e is PlayerInterruptedException) return; // прерывание аудиофокуса — не наш случай
+    unawaited(_tryAutoRecover());
+  }
+
+  Future<void> _tryAutoRecover() async {
+    final track = current;
+    if (track == null || _recovering || _loading) return;
+    // Оффлайн-файлы не протухают — их не перерезолвим.
+    if (localFileResolver?.call(track.uid) != null) return;
+    // Бюджет попыток — на трек, чтобы не зациклиться на битом источнике.
+    if (_recoverUid != track.uid) {
+      _recoverUid = track.uid;
+      _recoverAttempts = 0;
+    }
+    if (_recoverAttempts >= 3) return;
+    _recoverAttempts++;
+    _recovering = true;
+    final pos = _player.position; // вернёмся на то же место после перерезолва
+    _preUid = null; // возможно-протухшая предзагрузка больше не годится
+    _preStream = null;
+    try {
+      await _load();
+      if (_error == null && pos > Duration.zero) {
+        try {
+          await _player.seek(pos);
+        } catch (_) {}
+      }
+    } finally {
+      _recovering = false;
+    }
+  }
 
   /// Запуск радио: очередь из похожих, дальше докручивается на лету.
   Future<void> playRadio(Track seed, List<Track> queue) async {
