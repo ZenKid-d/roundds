@@ -55,8 +55,7 @@ dependencies:
 
   # Бэкап/экспорт библиотеки
   file_picker: ^8.1.2
-  # share_plus 13 — миграция на встроенный Kotlin (убирает KGP-warning сборки)
-  share_plus: ^13.0.0
+  share_plus: ^10.1.2
 
   # Рендер карточки трека в картинку для «поделиться»
   screenshot: ^3.0.0
@@ -65,22 +64,13 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Обновление приложения (проверка релизов + установка APK)
-  # package_info_plus 10 — встроенный Kotlin (убирает KGP-warning сборки)
-  package_info_plus: ^10.0.0
+  package_info_plus: ^8.0.0
   open_filex: ^4.5.0
 
   # Разрешение микрофона для реального визуализатора (Android Visualizer API)
   permission_handler: ^11.3.1
 
   cupertino_icons: ^1.0.8
-
-# win32 нужен только для Windows-сборок, которых у проекта нет (только Android).
-# Свежие плагины (package_info_plus 10, share_plus 13) требуют win32 ^6, а
-# несколько других (file_picker, flutter_secure_storage_windows) ещё пиннят
-# win32 ^5. Форсим 6 — Windows-реализации плагинов на Android не компилируются,
-# так что это безопасно и снимает конфликт резолва без гонки мажоров.
-dependency_overrides:
-  win32: ^6.0.0
 
 dev_dependencies:
   flutter_lints: ^4.0.0

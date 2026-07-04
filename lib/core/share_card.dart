@@ -41,12 +41,8 @@ Future<void> shareTrackCard(
     final dir = await getTemporaryDirectory();
     final f = File('${dir.path}/roundds_card.png');
     await f.writeAsBytes(bytes);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(f.path)],
-        text: '${track.artist} — ${track.title} · Roundds',
-      ),
-    );
+    await Share.shareXFiles([XFile(f.path)],
+        text: '${track.artist} — ${track.title} · Roundds');
   } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
