@@ -49,10 +49,7 @@ dependencies:
   youtube_explode_dart: ^2.2.1
 
   # Storage
-  # secure_storage 10 — тянет win32 ^6, что разблокирует KGP-fix плагинов
-  # (share_plus 13, package_info_plus 10). На Android v10 может потребовать
-  # разового повторного ввода токенов (Яндекс/SoundCloud).
-  flutter_secure_storage: ^10.0.0
+  flutter_secure_storage: ^9.2.2
   shared_preferences: ^2.2.3
   path_provider: ^2.1.4
 
@@ -76,6 +73,14 @@ dependencies:
   permission_handler: ^11.3.1
 
   cupertino_icons: ^1.0.8
+
+# win32 нужен только для Windows-сборок, которых у проекта нет (только Android).
+# Свежие плагины (package_info_plus 10, share_plus 13) требуют win32 ^6, а
+# несколько других (file_picker, flutter_secure_storage_windows) ещё пиннят
+# win32 ^5. Форсим 6 — Windows-реализации плагинов на Android не компилируются,
+# так что это безопасно и снимает конфликт резолва без гонки мажоров.
+dependency_overrides:
+  win32: ^6.0.0
 
 dev_dependencies:
   flutter_lints: ^4.0.0
