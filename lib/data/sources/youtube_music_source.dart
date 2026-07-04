@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -94,6 +95,41 @@ class YoutubeMusicSource implements MusicSource {
     if (_goodInstance == base) _goodInstance = null;
   }
 
+  // Зеркала опрашиваем не по одному (медленно, если первые лежат — каждое ждёт
+  // таймаут), а группами по [_pipedBatch] параллельно: берём первый успех.
+  static const _pipedBatch = 3;
+
+  /// Первый НЕ-null результат из группы (остальные игнорируются); null — если
+  /// все вернули null. Ожидает, что фьючерсы не бросают (ловят ошибки внутри).
+  Future<T?> _firstNonNull<T>(List<Future<T?>> futures) {
+    if (futures.isEmpty) return Future<T?>.value(null);
+    final completer = Completer<T?>();
+    var remaining = futures.length;
+    for (final f in futures) {
+      f.then((v) {
+        if (completer.isCompleted) return;
+        if (v != null) {
+          completer.complete(v);
+        } else if (--remaining == 0) {
+          completer.complete(null);
+        }
+      });
+    }
+    return completer.future;
+  }
+
+  /// Прогоняет [items] через [attempt] группами по [_pipedBatch], возвращает
+  /// первый успех (не-null) или null.
+  Future<T?> _raceInstances<T>(
+      List<String> items, Future<T?> Function(String) attempt) async {
+    for (var i = 0; i < items.length; i += _pipedBatch) {
+      final group = items.skip(i).take(_pipedBatch).map(attempt).toList();
+      final r = await _firstNonNull(group);
+      if (r != null) return r;
+    }
+    return null;
+  }
+
   Track? _pipedItemToTrack(Map it) {
     final url = it['url'] as String?; // '/watch?v=ID'
     if (url == null) return null;
@@ -119,85 +155,93 @@ class YoutubeMusicSource implements MusicSource {
   }
 
   Future<List<Track>> _pipedSearch(String query, {int limit = 20}) async {
-    for (final base in _instances()) {
-      try {
-        final r = await _dio.get('$base/search',
-            queryParameters: {'q': query, 'filter': 'music_songs'},
-            options: Options(receiveTimeout: const Duration(seconds: 12)));
-        final items = (r.data['items'] as List?) ?? [];
-        final out = <Track>[];
-        final seen = <String>{};
-        for (final it in items) {
-          if (it is! Map) continue;
-          final t = _pipedItemToTrack(it);
-          if (t != null && seen.add(t.id)) out.add(t);
-          if (out.length >= limit) break;
-        }
-        if (out.isNotEmpty) {
-          _markInstanceOk(base);
-          return out;
-        }
-      } catch (_) {
-        _markInstanceDead(base);
+    final r = await _raceInstances(
+        _instances(), (base) => _pipedSearchOn(base, query, limit));
+    return r ?? const [];
+  }
+
+  Future<List<Track>?> _pipedSearchOn(
+      String base, String query, int limit) async {
+    try {
+      final r = await _dio.get('$base/search',
+          queryParameters: {'q': query, 'filter': 'music_songs'},
+          options: Options(receiveTimeout: const Duration(seconds: 12)));
+      final items = (r.data['items'] as List?) ?? [];
+      final out = <Track>[];
+      final seen = <String>{};
+      for (final it in items) {
+        if (it is! Map) continue;
+        final t = _pipedItemToTrack(it);
+        if (t != null && seen.add(t.id)) out.add(t);
+        if (out.length >= limit) break;
       }
+      if (out.isEmpty) return null;
+      _markInstanceOk(base);
+      return out;
+    } catch (_) {
+      _markInstanceDead(base);
+      return null;
     }
-    return const [];
   }
 
   Future<List<Track>> _pipedRelated(String videoId, {int limit = 40}) async {
-    for (final base in _instances()) {
-      try {
-        final r = await _dio.get('$base/streams/$videoId',
-            options: Options(receiveTimeout: const Duration(seconds: 12)));
-        final items = (r.data['relatedStreams'] as List?) ?? [];
-        final out = <Track>[];
-        final seen = <String>{videoId};
-        for (final it in items) {
-          if (it is! Map) continue;
-          if (it['type'] != null && it['type'] != 'stream') continue;
-          final t = _pipedItemToTrack(it);
-          if (t != null && seen.add(t.id)) out.add(t);
-          if (out.length >= limit) break;
-        }
-        if (out.isNotEmpty) {
-          _markInstanceOk(base);
-          return out;
-        }
-      } catch (_) {
-        _markInstanceDead(base);
-      }
-    }
-    return const [];
+    final r = await _raceInstances(
+        _instances(), (base) => _pipedRelatedOn(base, videoId, limit));
+    return r ?? const [];
   }
 
-  Future<PlayableStream?> _resolveViaPiped(String videoId) async {
-    for (final base in _instances()) {
-      try {
-        final r = await _dio.get('$base/streams/$videoId',
-            options: Options(receiveTimeout: const Duration(seconds: 12)));
-        final audio = (r.data['audioStreams'] as List?) ?? [];
-        if (audio.isEmpty) continue;
-        // По убыванию битрейта; выбираем по качеству.
-        audio.sort((a, b) => ((b['bitrate'] ?? 0) as num)
-            .compareTo((a['bitrate'] ?? 0) as num));
-        final chosen = (streamQuality == 0
-            ? audio.last
-            : streamQuality == 1
-                ? audio[audio.length ~/ 2]
-                : audio.first) as Map;
-        final url = chosen['url'] as String?;
-        if (url != null && url.isNotEmpty) {
-          _markInstanceOk(base);
-          return PlayableStream(
-            uri: Uri.parse(url),
-            expiresAt: DateTime.now().add(const Duration(hours: 3)),
-          );
-        }
-      } catch (_) {
-        _markInstanceDead(base);
+  Future<List<Track>?> _pipedRelatedOn(
+      String base, String videoId, int limit) async {
+    try {
+      final r = await _dio.get('$base/streams/$videoId',
+          options: Options(receiveTimeout: const Duration(seconds: 12)));
+      final items = (r.data['relatedStreams'] as List?) ?? [];
+      final out = <Track>[];
+      final seen = <String>{videoId};
+      for (final it in items) {
+        if (it is! Map) continue;
+        if (it['type'] != null && it['type'] != 'stream') continue;
+        final t = _pipedItemToTrack(it);
+        if (t != null && seen.add(t.id)) out.add(t);
+        if (out.length >= limit) break;
       }
+      if (out.isEmpty) return null;
+      _markInstanceOk(base);
+      return out;
+    } catch (_) {
+      _markInstanceDead(base);
+      return null;
     }
-    return null;
+  }
+
+  Future<PlayableStream?> _resolveViaPiped(String videoId) =>
+      _raceInstances(_instances(), (base) => _pipedResolveOn(base, videoId));
+
+  Future<PlayableStream?> _pipedResolveOn(String base, String videoId) async {
+    try {
+      final r = await _dio.get('$base/streams/$videoId',
+          options: Options(receiveTimeout: const Duration(seconds: 12)));
+      final audio = (r.data['audioStreams'] as List?) ?? [];
+      if (audio.isEmpty) return null;
+      // По убыванию битрейта; выбираем по качеству.
+      audio.sort((a, b) =>
+          ((b['bitrate'] ?? 0) as num).compareTo((a['bitrate'] ?? 0) as num));
+      final chosen = (streamQuality == 0
+          ? audio.last
+          : streamQuality == 1
+              ? audio[audio.length ~/ 2]
+              : audio.first) as Map;
+      final url = chosen['url'] as String?;
+      if (url == null || url.isEmpty) return null;
+      _markInstanceOk(base);
+      return PlayableStream(
+        uri: Uri.parse(url),
+        expiresAt: DateTime.now().add(const Duration(hours: 3)),
+      );
+    } catch (_) {
+      _markInstanceDead(base);
+      return null;
+    }
   }
 
   @override
