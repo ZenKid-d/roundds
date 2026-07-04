@@ -49,7 +49,10 @@ dependencies:
   youtube_explode_dart: ^2.2.1
 
   # Storage
-  flutter_secure_storage: ^9.2.2
+  # secure_storage 10 — тянет win32 ^6, что разблокирует KGP-fix плагинов
+  # (share_plus 13, package_info_plus 10). На Android v10 может потребовать
+  # разового повторного ввода токенов (Яндекс/SoundCloud).
+  flutter_secure_storage: ^10.0.0
   shared_preferences: ^2.2.3
   path_provider: ^2.1.4
 
@@ -65,10 +68,8 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Обновление приложения (проверка релизов + установка APK)
-  # NB: package_info_plus 10 (KGP-fix) требует win32 ^6, что конфликтует с
-  # flutter_secure_storage 9 (win32 ^5). Оставляем 8 до согласованного апгрейда
-  # secure_storage→10 (риск миграции хранилища токенов на Android).
-  package_info_plus: ^8.0.0
+  # package_info_plus 10 — встроенный Kotlin (убирает KGP-warning сборки)
+  package_info_plus: ^10.0.0
   open_filex: ^4.5.0
 
   # Разрешение микрофона для реального визуализатора (Android Visualizer API)
