@@ -346,10 +346,24 @@ class YoutubeMusicSource implements MusicSource {
     return out.take(limit).toList();
   }
 
+  // После троттлинга YouTube (RequestLimitExceededException) на некоторое время
+  // резолвим сразу через Piped, не тратя попытку на заведомо лимитированный
+  // прямой путь. Актуально при общем VPN-IP, когда лимит ловит много треков.
+  DateTime? _throttledUntil;
+  bool get _throttled =>
+      _throttledUntil != null && DateTime.now().isBefore(_throttledUntil!);
+
+  static bool _isRateLimit(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('requestlimit') || s.contains('rate limit');
+  }
+
   @override
   Future<PlayableStream> resolveStream(Track track) async {
-    // В режиме обхода (РФ) поток берём через зеркало Piped (проксируется им).
-    if (bypassEnabled) {
+    // Piped-first: в режиме обхода (РФ) или после недавнего троттлинга. Зеркала
+    // проксируют поток через свои серверы и не упираются в лимит нашего IP.
+    final pipedFirst = bypassEnabled || _throttled;
+    if (pipedFirst) {
       final viaPiped = await _resolveViaPiped(track.id);
       if (viaPiped != null) return viaPiped;
       // Зеркала не смогли — пробуем напрямую (вдруг сработает).
@@ -364,6 +378,15 @@ class YoutubeMusicSource implements MusicSource {
         expiresAt: DateTime.now().add(const Duration(minutes: 30)),
       );
     } catch (e) {
+      // Троттлинг — запоминаем, чтобы следующие треки шли сразу через Piped.
+      if (_isRateLimit(e)) {
+        _throttledUntil = DateTime.now().add(const Duration(minutes: 10));
+      }
+      // Если Piped ещё не пробовали выше — пробуем сейчас.
+      if (!pipedFirst) {
+        final viaPiped = await _resolveViaPiped(track.id);
+        if (viaPiped != null) return viaPiped;
+      }
       throw SourceException(type, 'поток недоступен ($e)');
     }
   }
@@ -417,9 +440,10 @@ class YoutubeMusicSource implements MusicSource {
     String path, {
     void Function(int received, int total)? onProgress,
   }) async {
-    // В режиме обхода (РФ) поток идёт через Piped — там обычный файл,
-    // качаем его по URL через dio (общий путь), нативный клиент не годится.
-    if (bypassEnabled) return false;
+    // В режиме обхода (РФ) или при троттлинге поток идёт через Piped — там
+    // обычный файл, качаем его по URL через dio (общий путь). Нативный
+    // youtube_explode-клиент тут не годится (упрётся в тот же лимит).
+    if (bypassEnabled || _throttled) return false;
     IOSink? sink;
     try {
       final info = await _selectStream(track.id);
@@ -436,7 +460,11 @@ class YoutubeMusicSource implements MusicSource {
       await sink.close();
       sink = null;
       return true;
-    } catch (_) {
+    } catch (e) {
+      // Троттлинг — запомним, чтобы следующие резолвы шли через Piped.
+      if (_isRateLimit(e)) {
+        _throttledUntil = DateTime.now().add(const Duration(minutes: 10));
+      }
       // Не смогли — подчистим частичный файл и отдадим управление dio-пути.
       try {
         await sink?.close();
