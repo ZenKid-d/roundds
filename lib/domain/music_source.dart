@@ -19,6 +19,16 @@ abstract class MusicSource {
 
   /// Получить играбельный поток для трека (вызывается перед воспроизведением).
   Future<PlayableStream> resolveStream(Track track);
+
+  /// Опциональная нативная загрузка трека в файл [path], когда простой HTTP-GET
+  /// по потоковой ссылке не срабатывает (например, YouTube отдаёт аудио чанками
+  /// и на полный GET может вернуть 403). Возвращает true при успехе; false —
+  /// «не умею / не смог», тогда вызывающий грузит по resolveStream-URL.
+  Future<bool> downloadTo(
+    Track track,
+    String path, {
+    void Function(int received, int total)? onProgress,
+  });
 }
 
 /// Исключение источника с человекочитаемой причиной (показываем в UI).

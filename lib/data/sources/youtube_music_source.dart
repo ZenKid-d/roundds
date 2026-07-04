@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -354,48 +355,97 @@ class YoutubeMusicSource implements MusicSource {
       // Зеркала не смогли — пробуем напрямую (вдруг сработает).
     }
     try {
-      StreamManifest manifest;
-      try {
-        // Быстрый путь: только androidVr. Замерено — в 5–6 раз быстрее перебора
-        // трёх клиентов (~1.5с против ~14с), и ссылка играбельна: androidVr не
-        // троттлит поток, поэтому n-параметр не мешает. requireWatchPage не
-        // трогаем (по умолчанию true — нужен для расшифровки).
-        manifest = await _yt.videos.streamsClient.getManifest(
-          track.id,
-          ytClients: [YoutubeApiClient.androidVr],
-        );
-      } catch (_) {
-        // Редкий случай (видео недоступно androidVr) — полный набор клиентов.
-        manifest = await _yt.videos.streamsClient.getManifest(
-          track.id,
-          ytClients: [
-            YoutubeApiClient.androidVr,
-            YoutubeApiClient.android,
-            YoutubeApiClient.ios,
-          ],
-        );
-      }
-      final Uri url;
-      if (manifest.audioOnly.isNotEmpty) {
-        final list = manifest.audioOnly.toList()
-          ..sort((a, b) =>
-              a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-        // По качеству: низкое — первый, среднее — середина, высокое — последний.
-        final sel = streamQuality == 0
-            ? list.first
-            : streamQuality == 1
-                ? list[list.length ~/ 2]
-                : list.last;
-        url = sel.url;
-      } else {
-        url = manifest.muxed.withHighestBitrate().url;
+      final info = await _selectStream(track.id);
+      if (info == null) {
+        throw SourceException(type, 'нет аудио-дорожки');
       }
       return PlayableStream(
-        uri: url,
+        uri: info.url,
         expiresAt: DateTime.now().add(const Duration(minutes: 30)),
       );
     } catch (e) {
       throw SourceException(type, 'поток недоступен ($e)');
+    }
+  }
+
+  /// Выбирает подходящий поток (audio-only по качеству; иначе лучший muxed).
+  /// Общий код для проигрывания (нужен URL) и загрузки (нужен StreamInfo).
+  Future<StreamInfo?> _selectStream(String videoId) async {
+    StreamManifest manifest;
+    try {
+      // Быстрый путь: только androidVr. Замерено — в 5–6 раз быстрее перебора
+      // трёх клиентов (~1.5с против ~14с), и ссылка играбельна: androidVr не
+      // троттлит поток, поэтому n-параметр не мешает. requireWatchPage не
+      // трогаем (по умолчанию true — нужен для расшифровки).
+      manifest = await _yt.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: [YoutubeApiClient.androidVr],
+      );
+    } catch (_) {
+      // Редкий случай (видео недоступно androidVr) — полный набор клиентов.
+      manifest = await _yt.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: [
+          YoutubeApiClient.androidVr,
+          YoutubeApiClient.android,
+          YoutubeApiClient.ios,
+        ],
+      );
+    }
+    if (manifest.audioOnly.isNotEmpty) {
+      final list = manifest.audioOnly.toList()
+        ..sort((a, b) =>
+            a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
+      // По качеству: низкое — первый, среднее — середина, высокое — последний.
+      return streamQuality == 0
+          ? list.first
+          : streamQuality == 1
+              ? list[list.length ~/ 2]
+              : list.last;
+    }
+    if (manifest.muxed.isNotEmpty) return manifest.muxed.withHighestBitrate();
+    return null;
+  }
+
+  /// Нативная потоковая загрузка через youtube_explode: сам качает аудио
+  /// чанками с корректными заголовками. Простой HTTP-GET по googlevideo-ссылке
+  /// часто отдаёт 403 (плеер играет ranged-стримингом, а полный GET — нет),
+  /// поэтому для скачивания YouTube этот путь надёжнее.
+  @override
+  Future<bool> downloadTo(
+    Track track,
+    String path, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    // В режиме обхода (РФ) поток идёт через Piped — там обычный файл,
+    // качаем его по URL через dio (общий путь), нативный клиент не годится.
+    if (bypassEnabled) return false;
+    IOSink? sink;
+    try {
+      final info = await _selectStream(track.id);
+      if (info == null) return false;
+      final total = info.size.totalBytes;
+      sink = File(path).openWrite();
+      var received = 0;
+      await for (final chunk in _yt.videos.streamsClient.get(info)) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) onProgress?.call(received, total);
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      return true;
+    } catch (_) {
+      // Не смогли — подчистим частичный файл и отдадим управление dio-пути.
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        final f = File(path);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+      return false;
     }
   }
 

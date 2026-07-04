@@ -43,6 +43,11 @@ class FakeSource implements MusicSource {
     if (throwOnResolve) throw Exception('resolve failed');
     return PlayableStream(uri: Uri.parse('https://example/${track.id}'));
   }
+
+  @override
+  Future<bool> downloadTo(Track track, String path,
+          {void Function(int received, int total)? onProgress}) async =>
+      false;
 }
 
 Track track(SourceType s, String id) =>

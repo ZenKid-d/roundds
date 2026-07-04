@@ -200,6 +200,12 @@ class SoundcloudSource implements MusicSource {
     );
   }
 
+  // Нативной загрузки нет — грузим по resolveStream-URL (см. DownloadsController).
+  @override
+  Future<bool> downloadTo(Track track, String path,
+          {void Function(int received, int total)? onProgress}) async =>
+      false;
+
   Track? _toTrack(Map<String, dynamic> j) {
     if (j['kind'] != null && j['kind'] != 'track') return null;
     final media = j['media'] as Map?;

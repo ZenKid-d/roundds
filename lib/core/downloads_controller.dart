@@ -79,23 +79,35 @@ class DownloadsController extends ChangeNotifier {
     notifyListeners();
     var ok = false;
     try {
-      final stream = await _aggregator.resolveStreamWithFallback(track);
       final dir = await getApplicationDocumentsDirectory();
       final folder = Directory('${dir.path}/downloads');
       if (!folder.existsSync()) folder.createSync(recursive: true);
       final safe = track.uid.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
       final path = '${folder.path}/$safe.audio';
-      await _dio.download(
-        stream.uri.toString(),
-        path,
-        options: Options(headers: stream.headers),
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            _progress[track.uid] = received / total;
-            notifyListeners();
-          }
-        },
-      );
+
+      void onProg(int received, int total) {
+        if (total > 0) {
+          _progress[track.uid] = received / total;
+          notifyListeners();
+        }
+      }
+
+      // Сначала пробуем нативную загрузку источника: YouTube отдаёт аудио
+      // чанками, и простой GET по googlevideo-ссылке часто падает с 403 (при
+      // том что плеер её стримит). Не смог — грузим по URL через dio, сохраняя
+      // кросс-источниковый фолбэк (resolveStreamWithFallback).
+      final native = await _aggregator
+          .sourceFor(track.source)
+          .downloadTo(track, path, onProgress: onProg);
+      if (!native) {
+        final stream = await _aggregator.resolveStreamWithFallback(track);
+        await _dio.download(
+          stream.uri.toString(),
+          path,
+          options: Options(headers: stream.headers),
+          onReceiveProgress: onProg,
+        );
+      }
       _tracks[track.uid] = track;
       _paths[track.uid] = path;
       await _persist();
@@ -103,7 +115,8 @@ class DownloadsController extends ChangeNotifier {
       if (notify) {
         await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Не удалось скачать ${track.uid}: $e');
       // не удалось — вернём false, вызывающий может повторить
     } finally {
       _inProgress.remove(track.uid);

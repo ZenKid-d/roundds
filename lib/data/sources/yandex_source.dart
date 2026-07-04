@@ -183,6 +183,12 @@ class YandexSource implements MusicSource {
     return m?.group(1) ?? '';
   }
 
+  // Нативной загрузки нет — Яндекс отдаёт прямой mp3, грузится обычным GET.
+  @override
+  Future<bool> downloadTo(Track track, String path,
+          {void Function(int received, int total)? onProgress}) async =>
+      false;
+
   Track _toTrack(Map<String, dynamic> j) {
     final artists = (j['artists'] as List? ?? [])
         .map((a) => (a as Map)['name'])
