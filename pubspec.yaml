@@ -65,8 +65,10 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Обновление приложения (проверка релизов + установка APK)
-  # package_info_plus 10 — встроенный Kotlin (убирает KGP-warning сборки)
-  package_info_plus: ^10.0.0
+  # NB: package_info_plus 10 (KGP-fix) требует win32 ^6, что конфликтует с
+  # flutter_secure_storage 9 (win32 ^5). Оставляем 8 до согласованного апгрейда
+  # secure_storage→10 (риск миграции хранилища токенов на Android).
+  package_info_plus: ^8.0.0
   open_filex: ^4.5.0
 
   # Разрешение микрофона для реального визуализатора (Android Visualizer API)
