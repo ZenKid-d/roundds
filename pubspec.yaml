@@ -20,7 +20,9 @@ dependencies:
   just_audio: ^0.9.40
   audio_service: ^0.18.15
 
-  # Dynamic accent from artwork
+  # Dynamic accent from artwork.
+  # ВНИМАНИЕ: пакет объявлен discontinued (обновлений не будет), но рабочий.
+  # Замена изменит подбор акцента — трогаем только при реальной поломке.
   palette_generator: ^0.3.3+3
 
   # Geometric font
@@ -53,7 +55,8 @@ dependencies:
 
   # Бэкап/экспорт библиотеки
   file_picker: ^8.1.2
-  share_plus: ^10.1.2
+  # share_plus 13 — миграция на встроенный Kotlin (убирает KGP-warning сборки)
+  share_plus: ^13.0.0
 
   # Рендер карточки трека в картинку для «поделиться»
   screenshot: ^3.0.0
@@ -62,7 +65,8 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Обновление приложения (проверка релизов + установка APK)
-  package_info_plus: ^8.0.0
+  # package_info_plus 10 — встроенный Kotlin (убирает KGP-warning сборки)
+  package_info_plus: ^10.0.0
   open_filex: ^4.5.0
 
   # Разрешение микрофона для реального визуализатора (Android Visualizer API)
