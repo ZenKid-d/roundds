@@ -2,6 +2,7 @@ import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import '../domain/music_source.dart';
+import 'sources/youtube_music_source.dart';
 
 /// Сводит включённые источники в единый поиск/ленту и маршрутизирует
 /// резолв потока к нужному источнику.
@@ -93,6 +94,13 @@ class Aggregator {
 
   Future<PlayableStream> resolveStream(Track track) =>
       _sources[track.source]!.resolveStream(track);
+
+  /// Сбрасывает кэш резолва потока для трека (вызывается при ошибке
+  /// воспроизведения — чтобы перерезолв взял свежую ссылку, а не битую из кэша).
+  void evictStreamCache(Track track) {
+    final s = _sources[track.source];
+    if (s is YoutubeMusicSource) s.evictStreamCache(track.id);
+  }
 
   /// Ищет ту же песню на YouTube (для фолбэка загрузки/воспроизведения, когда
   /// родной источник отдаёт HLS или недоступен). null — YouTube выключен/не

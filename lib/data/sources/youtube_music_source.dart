@@ -60,8 +60,39 @@ class YoutubeMusicSource implements MusicSource {
 
   List<String> get userInstances => List.unmodifiable(_userInstances);
 
-  // Свои зеркала — первыми, затем встроенные.
-  List<String> _instances() => [..._userInstances, ..._defaultInstances];
+  // --- Здоровье Piped-зеркал: держимся рабочего, обходим недавно упавшие ---
+  String? _goodInstance;
+  final Map<String, DateTime> _deadUntil = {};
+  static const _instanceCooldown = Duration(minutes: 5);
+
+  // Порядок обхода: рабочее зеркало → живые → недавно упавшие (крайний резерв).
+  // Свои зеркала в приоритете над встроенными в пределах каждой группы.
+  List<String> _instances() {
+    final all = [..._userInstances, ..._defaultInstances];
+    final now = DateTime.now();
+    bool alive(String b) {
+      final d = _deadUntil[b];
+      return d == null || now.isAfter(d);
+    }
+
+    final good = _goodInstance;
+    final goodOk = good != null && all.contains(good) && alive(good);
+    return [
+      if (goodOk) good,
+      ...all.where((b) => b != good && alive(b)),
+      ...all.where((b) => b != good && !alive(b)),
+    ];
+  }
+
+  void _markInstanceOk(String base) {
+    _goodInstance = base;
+    _deadUntil.remove(base);
+  }
+
+  void _markInstanceDead(String base) {
+    _deadUntil[base] = DateTime.now().add(_instanceCooldown);
+    if (_goodInstance == base) _goodInstance = null;
+  }
 
   Track? _pipedItemToTrack(Map it) {
     final url = it['url'] as String?; // '/watch?v=ID'
@@ -102,8 +133,13 @@ class YoutubeMusicSource implements MusicSource {
           if (t != null && seen.add(t.id)) out.add(t);
           if (out.length >= limit) break;
         }
-        if (out.isNotEmpty) return out;
-      } catch (_) {/* следующее зеркало */}
+        if (out.isNotEmpty) {
+          _markInstanceOk(base);
+          return out;
+        }
+      } catch (_) {
+        _markInstanceDead(base);
+      }
     }
     return const [];
   }
@@ -123,8 +159,13 @@ class YoutubeMusicSource implements MusicSource {
           if (t != null && seen.add(t.id)) out.add(t);
           if (out.length >= limit) break;
         }
-        if (out.isNotEmpty) return out;
-      } catch (_) {/* следующее зеркало */}
+        if (out.isNotEmpty) {
+          _markInstanceOk(base);
+          return out;
+        }
+      } catch (_) {
+        _markInstanceDead(base);
+      }
     }
     return const [];
   }
@@ -146,12 +187,15 @@ class YoutubeMusicSource implements MusicSource {
                 : audio.first) as Map;
         final url = chosen['url'] as String?;
         if (url != null && url.isNotEmpty) {
+          _markInstanceOk(base);
           return PlayableStream(
             uri: Uri.parse(url),
             expiresAt: DateTime.now().add(const Duration(hours: 3)),
           );
         }
-      } catch (_) {/* следующее зеркало */}
+      } catch (_) {
+        _markInstanceDead(base);
+      }
     }
     return null;
   }
@@ -358,8 +402,27 @@ class YoutubeMusicSource implements MusicSource {
     return s.contains('requestlimit') || s.contains('rate limit');
   }
 
+  // Кэш резолва по videoId — реже дёргаем YouTube/Piped (меньше шанс поймать
+  // лимит) при повторах: реплей, предзагрузка, радио с возвратами. Отдаём, пока
+  // ссылка не истекла. Сбрасывается при ошибке воспроизведения (evictStreamCache),
+  // чтобы авто-перерезолв в плеере всегда брал свежую ссылку, а не битую из кэша.
+  final Map<String, PlayableStream> _streamCache = {};
+
+  void evictStreamCache(String videoId) => _streamCache.remove(videoId);
+
   @override
   Future<PlayableStream> resolveStream(Track track) async {
+    final cached = _streamCache[track.id];
+    if (cached != null && !cached.isExpired) return cached;
+    final s = await _resolveStreamUncached(track);
+    _streamCache[track.id] = s;
+    if (_streamCache.length > 128) {
+      _streamCache.remove(_streamCache.keys.first);
+    }
+    return s;
+  }
+
+  Future<PlayableStream> _resolveStreamUncached(Track track) async {
     // Piped-first: в режиме обхода (РФ) или после недавнего троттлинга. Зеркала
     // проксируют поток через свои серверы и не упираются в лимит нашего IP.
     final pipedFirst = bypassEnabled || _throttled;

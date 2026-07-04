@@ -266,6 +266,8 @@ class RoundsAudioHandler extends BaseAudioHandler {
   /// Повторная попытка воспроизвести текущий трек.
   Future<void> retry() {
     _recoverUid = null; // ручной повтор — сбросить бюджет авто-восстановления
+    final t = current;
+    if (t != null) _aggregator.evictStreamCache(t); // свежий резолв, не из кэша
     return _load();
   }
 
@@ -293,6 +295,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final pos = _player.position; // вернёмся на то же место после перерезолва
     _preUid = null; // возможно-протухшая предзагрузка больше не годится
     _preStream = null;
+    _aggregator.evictStreamCache(track); // не отдать битую ссылку из кэша
     try {
       await _load();
       if (_error == null && pos > Duration.zero) {
