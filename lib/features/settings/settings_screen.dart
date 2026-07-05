@@ -17,6 +17,7 @@ import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
 import 'appearance_screen.dart';
 import 'blacklist_screen.dart';
+import 'diagnostics_screen.dart';
 import 'storage_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -211,6 +212,16 @@ class SettingsScreen extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const BlacklistScreen())),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.bug_report_outlined),
+          title: const Text('Диагностика'),
+          subtitle: Text('Журнал событий источников (если что-то не играет)',
+              style: TextStyle(color: AppColors.white45, fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DiagnosticsScreen())),
         ),
         _AutoDlLikesTile(),
         const SizedBox(height: 16),

@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../core/diagnostics.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -86,6 +88,8 @@ class SoundcloudSource implements MusicSource {
         }
       } catch (_) {/* пробуем следующий скрипт */}
     }
+    Diagnostics.instance
+        .error('sc.clientId', 'не найден client_id в ${scripts.length} скриптах');
     throw SourceException(type, 'не удалось получить client_id');
   }
 
@@ -107,11 +111,12 @@ class SoundcloudSource implements MusicSource {
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
-          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .map((e) => toTrack(e.cast<String, dynamic>()))
           .where((t) => t != null)
           .cast<Track>()
           .toList();
     } catch (e) {
+      Diagnostics.instance.error('sc.search', '«$query»: $e');
       throw SourceException(type, 'ошибка поиска ($e)');
     }
   }
@@ -133,7 +138,7 @@ class SoundcloudSource implements MusicSource {
       return list
           .map((e) => (e as Map)['track'])
           .whereType<Map>()
-          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .map((e) => toTrack(e.cast<String, dynamic>()))
           .where((t) => t != null)
           .cast<Track>()
           .toList();
@@ -153,7 +158,7 @@ class SoundcloudSource implements MusicSource {
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
-          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .map((e) => toTrack(e.cast<String, dynamic>()))
           .whereType<Track>()
           .toList();
     } catch (_) {
@@ -194,6 +199,8 @@ class SoundcloudSource implements MusicSource {
         }
       } catch (_) {/* пробуем следующий транскодинг */}
     }
+    Diagnostics.instance.error('sc.resolve',
+        '${track.id} «${track.title}»: нет играбельного транскодинга');
     throw SourceException(
       type,
       'поток недоступен — возможно, трек доступен только по подписке SoundCloud Go.',
@@ -206,7 +213,8 @@ class SoundcloudSource implements MusicSource {
           {void Function(int received, int total)? onProgress}) async =>
       false;
 
-  Track? _toTrack(Map<String, dynamic> j) {
+  @visibleForTesting
+  static Track? toTrack(Map<String, dynamic> j) {
     if (j['kind'] != null && j['kind'] != 'track') return null;
     final media = j['media'] as Map?;
     final transcodings =

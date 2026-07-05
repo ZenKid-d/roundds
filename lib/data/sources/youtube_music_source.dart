@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../../core/diagnostics.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -130,7 +132,8 @@ class YoutubeMusicSource implements MusicSource {
     return null;
   }
 
-  Track? _pipedItemToTrack(Map it) {
+  @visibleForTesting
+  static Track? pipedItemToTrack(Map it) {
     final url = it['url'] as String?; // '/watch?v=ID'
     if (url == null) return null;
     final id = RegExp(r'v=([A-Za-z0-9_-]{11})').firstMatch(url)?.group(1);
@@ -171,7 +174,7 @@ class YoutubeMusicSource implements MusicSource {
       final seen = <String>{};
       for (final it in items) {
         if (it is! Map) continue;
-        final t = _pipedItemToTrack(it);
+        final t = pipedItemToTrack(it);
         if (t != null && seen.add(t.id)) out.add(t);
         if (out.length >= limit) break;
       }
@@ -201,7 +204,7 @@ class YoutubeMusicSource implements MusicSource {
       for (final it in items) {
         if (it is! Map) continue;
         if (it['type'] != null && it['type'] != 'stream') continue;
-        final t = _pipedItemToTrack(it);
+        final t = pipedItemToTrack(it);
         if (t != null && seen.add(t.id)) out.add(t);
         if (out.length >= limit) break;
       }
@@ -238,7 +241,8 @@ class YoutubeMusicSource implements MusicSource {
         uri: Uri.parse(url),
         expiresAt: DateTime.now().add(const Duration(hours: 3)),
       );
-    } catch (_) {
+    } catch (e) {
+      Diagnostics.instance.warn('yt.piped', 'resolve @$base: $e');
       _markInstanceDead(base);
       return null;
     }
@@ -263,11 +267,15 @@ class YoutubeMusicSource implements MusicSource {
     try {
       final music = await _musicSearch(query, limit: limit);
       if (music.isNotEmpty) return music;
-    } catch (_) {/* падаем на обычный поиск */}
+    } catch (e) {
+      Diagnostics.instance
+          .info('yt.search', 'InnerTube fell back to plain search: $e');
+    }
     try {
       final results = await _yt.search.search(query);
       return _onlyMusic(results).take(limit).toList();
     } catch (e) {
+      Diagnostics.instance.error('yt.search', '«$query»: $e');
       throw SourceException(type, 'не удалось выполнить поиск ($e)');
     }
   }
@@ -329,7 +337,7 @@ class YoutubeMusicSource implements MusicSource {
       if (n is Map) {
         final r = n['musicResponsiveListItemRenderer'];
         if (r is Map) {
-          final t = _mrlirToTrack(r);
+          final t = mrlirToTrack(r);
           if (t != null && seen.add(t.id)) out.add(t);
         }
         for (final v in n.values) {
@@ -347,9 +355,10 @@ class YoutubeMusicSource implements MusicSource {
   }
 
   /// Разбирает musicResponsiveListItemRenderer в Track.
-  Track? _mrlirToTrack(Map r) {
-    final videoId = (_dig(r, ['playlistItemData', 'videoId']) ??
-        _dig(r, [
+  @visibleForTesting
+  static Track? mrlirToTrack(Map r) {
+    final videoId = (dig(r, ['playlistItemData', 'videoId']) ??
+        dig(r, [
           'overlay',
           'musicItemThumbnailOverlayRenderer',
           'content',
@@ -358,7 +367,7 @@ class YoutubeMusicSource implements MusicSource {
           'watchEndpoint',
           'videoId'
         ]) ??
-        _dig(r, [
+        dig(r, [
           'flexColumns',
           0,
           'musicResponsiveListItemFlexColumnRenderer',
@@ -369,7 +378,7 @@ class YoutubeMusicSource implements MusicSource {
           'watchEndpoint',
           'videoId'
         ])) as String?;
-    final title = _dig(r, [
+    final title = dig(r, [
       'flexColumns',
       0,
       'musicResponsiveListItemFlexColumnRenderer',
@@ -382,7 +391,7 @@ class YoutubeMusicSource implements MusicSource {
 
     var artist = 'YouTube';
     Duration? duration;
-    final runs = _dig(r, [
+    final runs = dig(r, [
       'flexColumns',
       1,
       'musicResponsiveListItemFlexColumnRenderer',
@@ -390,8 +399,8 @@ class YoutubeMusicSource implements MusicSource {
       'runs'
     ]);
     if (runs is List && runs.isNotEmpty) {
-      artist = (_dig(runs.first, ['text']) ?? 'YouTube').toString();
-      duration = _parseClockDuration(_dig(runs.last, ['text'])?.toString());
+      artist = (dig(runs.first, ['text']) ?? 'YouTube').toString();
+      duration = parseClockDuration(dig(runs.last, ['text'])?.toString());
     }
     const topic = ' - Topic';
     if (artist.endsWith(topic)) {
@@ -401,10 +410,10 @@ class YoutubeMusicSource implements MusicSource {
     // Настоящая квадратная обложка альбома (googleusercontent) — если есть,
     // берём её (крупнее), иначе превью видео.
     String? art;
-    final thumbs = _dig(
+    final thumbs = dig(
         r, ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
     if (thumbs is List && thumbs.isNotEmpty) {
-      final url = _dig(thumbs.last, ['url'])?.toString();
+      final url = dig(thumbs.last, ['url'])?.toString();
       art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w720-h720');
     }
     art ??= ytArtwork(videoId);
@@ -488,12 +497,16 @@ class YoutubeMusicSource implements MusicSource {
       // Троттлинг — запоминаем, чтобы следующие треки шли сразу через Piped.
       if (_isRateLimit(e)) {
         _throttledUntil = DateTime.now().add(const Duration(minutes: 10));
+        Diagnostics.instance
+            .warn('yt.throttle', 'rate-limit, 10 мин через Piped ($e)');
       }
       // Если Piped ещё не пробовали выше — пробуем сейчас.
       if (!pipedFirst) {
         final viaPiped = await _resolveViaPiped(track.id);
         if (viaPiped != null) return viaPiped;
       }
+      Diagnostics.instance
+          .error('yt.resolve', '${track.id} «${track.title}»: $e');
       throw SourceException(type, 'поток недоступен ($e)');
     }
   }
@@ -625,7 +638,7 @@ class YoutubeMusicSource implements MusicSource {
       if (n is Map) {
         final r = n['playlistPanelVideoRenderer'];
         if (r is Map) {
-          final t = _panelToTrack(r);
+          final t = panelToTrack(r);
           if (t != null && seen.add(t.id)) out.add(t);
         }
         for (final v in n.values) {
@@ -642,18 +655,19 @@ class YoutubeMusicSource implements MusicSource {
     return out;
   }
 
-  Track? _panelToTrack(Map r) {
-    final videoId = _dig(r, ['videoId']) as String?;
-    final title = _dig(r, ['title', 'runs', 0, 'text']) as String?;
+  @visibleForTesting
+  static Track? panelToTrack(Map r) {
+    final videoId = dig(r, ['videoId']) as String?;
+    final title = dig(r, ['title', 'runs', 0, 'text']) as String?;
     if (videoId == null || title == null) return null;
     var artist =
-        (_dig(r, ['longBylineText', 'runs', 0, 'text']) ?? 'YouTube').toString();
+        (dig(r, ['longBylineText', 'runs', 0, 'text']) ?? 'YouTube').toString();
     const topic = ' - Topic';
     if (artist.endsWith(topic)) {
       artist = artist.substring(0, artist.length - topic.length);
     }
     final duration =
-        _parseClockDuration(_dig(r, ['lengthText', 'runs', 0, 'text'])?.toString());
+        parseClockDuration(dig(r, ['lengthText', 'runs', 0, 'text'])?.toString());
     return Track(
       id: videoId,
       title: title,
@@ -682,7 +696,7 @@ class YoutubeMusicSource implements MusicSource {
       }),
     );
     final html = page.data ?? '';
-    final initial = _extractJson(html, 'ytInitialData');
+    final initial = extractJson(html, 'ytInitialData');
     final apiKey =
         RegExp(r'"INNERTUBE_API_KEY":"([^"]+)"').firstMatch(html)?.group(1);
     final clientVersion = RegExp(r'"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"')
@@ -690,19 +704,19 @@ class YoutubeMusicSource implements MusicSource {
             ?.group(1) ??
         '2.20240101.00.00';
 
-    final title = (_dig(initial, [
+    final title = (dig(initial, [
               'header',
               'playlistHeaderRenderer',
               'title',
               'simpleText'
             ]) ??
-            _dig(initial, ['metadata', 'playlistMetadataRenderer', 'title']) ??
+            dig(initial, ['metadata', 'playlistMetadataRenderer', 'title']) ??
             'Импортированный плейлист')
         .toString();
 
     final tracks = <Track>[];
     final seen = <String>{};
-    var token = _collect(initial, tracks, seen);
+    var token = collect(initial, tracks, seen);
 
     var guard = 0;
     while (token != null &&
@@ -729,7 +743,7 @@ class YoutubeMusicSource implements MusicSource {
             'Content-Type': 'application/json',
           }),
         );
-        token = _collect(resp.data, tracks, seen);
+        token = collect(resp.data, tracks, seen);
       } catch (_) {
         break;
       }
@@ -742,13 +756,14 @@ class YoutubeMusicSource implements MusicSource {
   /// видео-карточки (`lockupViewModel`) и продолжение (`continuationCommand`).
   /// Не зависит от точного пути вложенности — YouTube меняет его без
   /// предупреждения, а сами ключи узлов остаются относительно стабильными.
-  String? _collect(dynamic node, List<Track> out, Set<String> seen) {
+  @visibleForTesting
+  static String? collect(dynamic node, List<Track> out, Set<String> seen) {
     String? token;
     void walk(dynamic n) {
       if (n is Map) {
         final lockup = n['lockupViewModel'];
         if (lockup is Map && lockup['contentType'] == 'LOCKUP_CONTENT_TYPE_VIDEO') {
-          final t = _lockupToTrack(lockup);
+          final t = lockupToTrack(lockup);
           if (t != null && seen.add(t.id)) out.add(t);
         }
         final cc = n['continuationCommand'];
@@ -769,13 +784,14 @@ class YoutubeMusicSource implements MusicSource {
     return token;
   }
 
-  Track? _lockupToTrack(Map lockup) {
+  @visibleForTesting
+  static Track? lockupToTrack(Map lockup) {
     final videoId = lockup['contentId'] as String?;
-    final meta = _dig(lockup, ['metadata', 'lockupMetadataViewModel']);
-    final title = _dig(meta, ['title', 'content']) as String?;
+    final meta = dig(lockup, ['metadata', 'lockupMetadataViewModel']);
+    final title = dig(meta, ['title', 'content']) as String?;
     if (videoId == null || title == null) return null;
 
-    var artist = (_dig(meta, [
+    var artist = (dig(meta, [
               'metadata',
               'contentMetadataViewModel',
               'metadataRows',
@@ -794,15 +810,15 @@ class YoutubeMusicSource implements MusicSource {
 
     Duration? duration;
     final overlays =
-        _dig(lockup, ['contentImage', 'thumbnailViewModel', 'overlays']);
+        dig(lockup, ['contentImage', 'thumbnailViewModel', 'overlays']);
     if (overlays is List) {
       for (final o in overlays) {
-        final badges = _dig(
+        final badges = dig(
             o, ['thumbnailBottomOverlayViewModel', 'badges']);
         if (badges is List) {
           for (final b in badges) {
-            final text = _dig(b, ['thumbnailBadgeViewModel', 'text']);
-            final d = _parseClockDuration(text?.toString());
+            final text = dig(b, ['thumbnailBadgeViewModel', 'text']);
+            final d = parseClockDuration(text?.toString());
             if (d != null) duration = d;
           }
         }
@@ -820,7 +836,8 @@ class YoutubeMusicSource implements MusicSource {
   }
 
   /// Парсит длительность вида «1:02:07» / «2:07» в Duration.
-  Duration? _parseClockDuration(String? s) {
+  @visibleForTesting
+  static Duration? parseClockDuration(String? s) {
     if (s == null || !RegExp(r'^\d{1,2}(:\d{2}){1,2}$').hasMatch(s)) {
       return null;
     }
@@ -834,7 +851,8 @@ class YoutubeMusicSource implements MusicSource {
 
   /// Достаёт JSON-объект из inline-скрипта (например, ytInitialData) с учётом
   /// строк и экранирования.
-  Map<String, dynamic> _extractJson(String html, String marker) {
+  @visibleForTesting
+  static Map<String, dynamic> extractJson(String html, String marker) {
     var i = html.indexOf(marker);
     if (i < 0) return const {};
     i = html.indexOf('{', i);
@@ -873,7 +891,8 @@ class YoutubeMusicSource implements MusicSource {
     return const {};
   }
 
-  dynamic _dig(dynamic node, List<dynamic> path) {
+  @visibleForTesting
+  static dynamic dig(dynamic node, List<dynamic> path) {
     for (final p in path) {
       if (node == null) return null;
       if (p is int) {

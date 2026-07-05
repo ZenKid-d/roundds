@@ -8,6 +8,7 @@ import '../data/sources/soundcloud_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import 'diagnostics.dart';
 import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
@@ -29,6 +30,11 @@ final prefsProvider = Provider<SharedPreferences>(
 
 final secureStorageProvider =
     Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
+
+/// Внутренний журнал диагностики (кольцевой буфер) — тот же синглтон, в который
+/// пишут источники; экран «Диагностика» подписывается на него.
+final diagnosticsProvider =
+    ChangeNotifierProvider<Diagnostics>((ref) => Diagnostics.instance);
 
 Dio buildAppDio() => Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),

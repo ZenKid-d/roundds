@@ -1,6 +1,8 @@
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../core/diagnostics.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -66,7 +68,7 @@ class YandexSource implements MusicSource {
     return tracks
         .map((e) => (e as Map)['track'])
         .whereType<Map>()
-        .map((e) => _toTrack(e.cast<String, dynamic>()))
+        .map((e) => toTrack(e.cast<String, dynamic>()))
         .toList();
   }
 
@@ -90,9 +92,10 @@ class YandexSource implements MusicSource {
       return results
           .whereType<Map>()
           .take(limit)
-          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .map((e) => toTrack(e.cast<String, dynamic>()))
           .toList();
     } catch (e) {
+      Diagnostics.instance.error('ya.search', '«$query»: $e');
       throw SourceException(type, 'ошибка поиска ($e)');
     }
   }
@@ -111,12 +114,13 @@ class YandexSource implements MusicSource {
               .map((e) => (e as Map)['data']?['track'])
               .whereType<Map>()
               .take(limit)
-              .map((e) => _toTrack(e.cast<String, dynamic>()))
+              .map((e) => toTrack(e.cast<String, dynamic>()))
               .toList();
         }
       }
       return const [];
-    } catch (_) {
+    } catch (e) {
+      Diagnostics.instance.warn('ya.feed', 'chart: $e');
       return const [];
     }
   }
@@ -131,7 +135,7 @@ class YandexSource implements MusicSource {
       return list
           .whereType<Map>()
           .take(limit)
-          .map((e) => _toTrack(e.cast<String, dynamic>()))
+          .map((e) => toTrack(e.cast<String, dynamic>()))
           .toList();
     } catch (_) {
       return const [];
@@ -160,13 +164,12 @@ class YandexSource implements MusicSource {
       final xmlResp = await _dio.get<String>(best['downloadInfoUrl'] as String,
           options: Options(responseType: ResponseType.plain));
       final xml = xmlResp.data ?? '';
-      final host = _tag(xml, 'host');
-      final path = _tag(xml, 'path');
-      final ts = _tag(xml, 'ts');
-      final s = _tag(xml, 's');
-      final sign =
-          md5.convert('$_signSalt${path.substring(1)}$s'.codeUnits).toString();
-      final url = 'https://$host/get-mp3/$sign/$ts$path';
+      final url = buildStreamUrl(
+        host: tag(xml, 'host'),
+        path: tag(xml, 'path'),
+        ts: tag(xml, 'ts'),
+        s: tag(xml, 's'),
+      );
       return PlayableStream(
         uri: Uri.parse(url),
         expiresAt: DateTime.now().add(const Duration(minutes: 30)),
@@ -174,11 +177,28 @@ class YandexSource implements MusicSource {
     } on SourceException {
       rethrow;
     } catch (e) {
+      Diagnostics.instance
+          .error('ya.resolve', '${track.id} «${track.title}»: $e');
       throw SourceException(type, 'поток недоступен ($e)');
     }
   }
 
-  String _tag(String xml, String tag) {
+  /// Собирает подписанную mp3-ссылку из полей download-info XML. Схема подписи
+  /// (md5 соли+пути+s) — самая хрупкая часть Яндекса, вынесена для тестов.
+  @visibleForTesting
+  static String buildStreamUrl({
+    required String host,
+    required String path,
+    required String ts,
+    required String s,
+  }) {
+    final sign =
+        md5.convert('$_signSalt${path.substring(1)}$s'.codeUnits).toString();
+    return 'https://$host/get-mp3/$sign/$ts$path';
+  }
+
+  @visibleForTesting
+  static String tag(String xml, String tag) {
     final m = RegExp('<$tag>(.*?)</$tag>').firstMatch(xml);
     return m?.group(1) ?? '';
   }
@@ -189,7 +209,8 @@ class YandexSource implements MusicSource {
           {void Function(int received, int total)? onProgress}) async =>
       false;
 
-  Track _toTrack(Map<String, dynamic> j) {
+  @visibleForTesting
+  static Track toTrack(Map<String, dynamic> j) {
     final artists = (j['artists'] as List? ?? [])
         .map((a) => (a as Map)['name'])
         .whereType<String>()

@@ -1,0 +1,355 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:roundds/data/sources/soundcloud_source.dart';
+import 'package:roundds/data/sources/yandex_source.dart';
+import 'package:roundds/data/sources/youtube_music_source.dart';
+import 'package:roundds/domain/models/source_type.dart';
+import 'package:roundds/domain/models/track.dart';
+
+/// Тесты парсеров источников на зафиксированных фрагментах ответов.
+///
+/// Это самый хрупкий код проекта: он разбирает неофициальные схемы
+/// YouTube/SoundCloud/Яндекса, которые меняются без предупреждения. Фикстуры
+/// ниже — минимальные срезы реальных структур; если сервис сменит разметку,
+/// упавший тест укажет, какой именно парсер надо чинить (а не «молча пусто»).
+void main() {
+  group('YoutubeMusicSource.parseClockDuration', () {
+    test('mm:ss', () {
+      expect(YoutubeMusicSource.parseClockDuration('3:05'),
+          const Duration(seconds: 185));
+    });
+    test('hh:mm:ss', () {
+      expect(YoutubeMusicSource.parseClockDuration('1:02:07'),
+          const Duration(seconds: 3727));
+    });
+    test('null → null', () {
+      expect(YoutubeMusicSource.parseClockDuration(null), isNull);
+    });
+    test('мусор → null', () {
+      expect(YoutubeMusicSource.parseClockDuration('abc'), isNull);
+      expect(YoutubeMusicSource.parseClockDuration('12345'), isNull);
+      expect(YoutubeMusicSource.parseClockDuration('LIVE'), isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.dig', () {
+    final data = {
+      'a': [
+        {'b': 42}
+      ]
+    };
+    test('навигация по картам и спискам', () {
+      expect(YoutubeMusicSource.dig(data, ['a', 0, 'b']), 42);
+    });
+    test('выход за границы списка → null', () {
+      expect(YoutubeMusicSource.dig(data, ['a', 9, 'b']), isNull);
+    });
+    test('ключ в не-карте → null', () {
+      expect(YoutubeMusicSource.dig(data, ['a', 0, 'b', 'c']), isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.extractJson', () {
+    test('достаёт объект после маркера', () {
+      const html = 'foo var ytInitialData = {"a":1,"b":{"c":2}}; bar';
+      final j = YoutubeMusicSource.extractJson(html, 'ytInitialData');
+      expect(j['a'], 1);
+      expect((j['b'] as Map)['c'], 2);
+    });
+    test('игнорирует скобки внутри строк', () {
+      const html = 'x = {"t":"a}b{","n":3}';
+      final j = YoutubeMusicSource.extractJson(html, 'x =');
+      expect(j['t'], 'a}b{');
+      expect(j['n'], 3);
+    });
+    test('маркер не найден → пусто', () {
+      expect(YoutubeMusicSource.extractJson('nothing here', 'ytInitialData'),
+          isEmpty);
+    });
+  });
+
+  group('YoutubeMusicSource.pipedItemToTrack', () {
+    test('happy path + снятие « - Topic»', () {
+      final t = YoutubeMusicSource.pipedItemToTrack({
+        'url': '/watch?v=abcdefghijk',
+        'uploaderName': 'Some Artist - Topic',
+        'duration': 200,
+        'thumbnail': 'https://thumb/x.jpg',
+        'title': 'Cool Song',
+      })!;
+      expect(t.id, 'abcdefghijk');
+      expect(t.title, 'Cool Song');
+      expect(t.artist, 'Some Artist');
+      expect(t.duration, const Duration(seconds: 200));
+      expect(t.artworkUrl, 'https://thumb/x.jpg');
+      expect(t.source, SourceType.youtube);
+    });
+    test('нет thumbnail → превью YouTube по id', () {
+      final t = YoutubeMusicSource.pipedItemToTrack({
+        'url': '/watch?v=abcdefghijk',
+        'title': 'T',
+      })!;
+      expect(t.artworkUrl, YoutubeMusicSource.ytArtwork('abcdefghijk'));
+    });
+    test('нет url → null', () {
+      expect(YoutubeMusicSource.pipedItemToTrack({'title': 'x'}), isNull);
+    });
+    test('url без videoId → null', () {
+      expect(YoutubeMusicSource.pipedItemToTrack({'url': '/watch?foo=1'}),
+          isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.mrlirToTrack (YT Music «Songs»)', () {
+    Map<String, dynamic> renderer() => {
+          'playlistItemData': {'videoId': 'vid12345678'},
+          'flexColumns': [
+            {
+              'musicResponsiveListItemFlexColumnRenderer': {
+                'text': {
+                  'runs': [
+                    {'text': 'Song Title'}
+                  ]
+                }
+              }
+            },
+            {
+              'musicResponsiveListItemFlexColumnRenderer': {
+                'text': {
+                  'runs': [
+                    {'text': 'Artist Name'},
+                    {'text': '3:05'},
+                  ]
+                }
+              }
+            },
+          ],
+          'thumbnail': {
+            'musicThumbnailRenderer': {
+              'thumbnail': {
+                'thumbnails': [
+                  {'url': 'https://lh3.googleusercontent.com/x=w60-h60'}
+                ]
+              }
+            }
+          },
+        };
+
+    test('happy path: id/title/artist/duration/квадратная обложка', () {
+      final t = YoutubeMusicSource.mrlirToTrack(renderer())!;
+      expect(t.id, 'vid12345678');
+      expect(t.title, 'Song Title');
+      expect(t.artist, 'Artist Name');
+      expect(t.duration, const Duration(seconds: 185));
+      // Размер обложки нормализуется к w720-h720.
+      expect(t.artworkUrl, contains('w720-h720'));
+    });
+
+    test('нет videoId → null', () {
+      final r = renderer()..remove('playlistItemData');
+      expect(YoutubeMusicSource.mrlirToTrack(r), isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.panelToTrack (радио/next)', () {
+    test('happy path + снятие « - Topic»', () {
+      final t = YoutubeMusicSource.panelToTrack({
+        'videoId': 'radio123',
+        'title': {
+          'runs': [
+            {'text': 'Radio Track'}
+          ]
+        },
+        'longBylineText': {
+          'runs': [
+            {'text': 'The Band - Topic'}
+          ]
+        },
+        'lengthText': {
+          'runs': [
+            {'text': '2:00'}
+          ]
+        },
+      })!;
+      expect(t.id, 'radio123');
+      expect(t.title, 'Radio Track');
+      expect(t.artist, 'The Band');
+      expect(t.duration, const Duration(seconds: 120));
+    });
+  });
+
+  group('YoutubeMusicSource.lockupToTrack + collect (импорт плейлиста)', () {
+    Map<String, dynamic> lockup(String id, String title) => {
+          'contentId': id,
+          'metadata': {
+            'lockupMetadataViewModel': {
+              'title': {'content': title},
+              'metadata': {
+                'contentMetadataViewModel': {
+                  'metadataRows': [
+                    {
+                      'metadataParts': [
+                        {
+                          'text': {'content': 'Playlist Artist'}
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          'contentImage': {
+            'thumbnailViewModel': {
+              'overlays': [
+                {
+                  'thumbnailBottomOverlayViewModel': {
+                    'badges': [
+                      {
+                        'thumbnailBadgeViewModel': {'text': '3:00'}
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+        };
+
+    test('lockupToTrack разбирает карточку видео', () {
+      final t = YoutubeMusicSource.lockupToTrack(lockup('plvid1', 'Song A'))!;
+      expect(t.id, 'plvid1');
+      expect(t.title, 'Song A');
+      expect(t.artist, 'Playlist Artist');
+      expect(t.duration, const Duration(seconds: 180));
+    });
+
+    test('collect собирает треки и достаёт continuation-токен', () {
+      final node = {
+        'items': [
+          {
+            'lockupViewModel': {
+              'contentType': 'LOCKUP_CONTENT_TYPE_VIDEO',
+              ...lockup('plvid1', 'Song A'),
+            }
+          },
+          {
+            'lockupViewModel': {
+              'contentType': 'LOCKUP_CONTENT_TYPE_VIDEO',
+              ...lockup('plvid2', 'Song B'),
+            }
+          },
+        ],
+        'continuations': {
+          'continuationCommand': {'token': 'NEXT_PAGE'}
+        },
+      };
+      final out = <Track>[];
+      final token = YoutubeMusicSource.collect(node, out, <String>{});
+      expect(out.map((t) => t.id).toList(), ['plvid1', 'plvid2']);
+      expect(token, 'NEXT_PAGE');
+    });
+
+    test('collect дедуплицирует по seen', () {
+      final node = {
+        'lockupViewModel': {
+          'contentType': 'LOCKUP_CONTENT_TYPE_VIDEO',
+          ...lockup('dup', 'X'),
+        }
+      };
+      final out = <Track>[];
+      final seen = <String>{'dup'};
+      YoutubeMusicSource.collect(node, out, seen);
+      expect(out, isEmpty);
+    });
+  });
+
+  group('SoundcloudSource.toTrack', () {
+    Map<String, dynamic> raw() => {
+          'kind': 'track',
+          'id': 12345,
+          'title': 'SC Song',
+          'user': {'username': 'DJ Test'},
+          'artwork_url': 'https://i1.sndcdn.com/artworks-abc-large.jpg',
+          'duration': 210000,
+          'media': {
+            'transcodings': [
+              {
+                'url': 'https://api/transcode',
+                'format': {'protocol': 'progressive'}
+              }
+            ]
+          },
+        };
+
+    test('happy path + апскейл обложки + transcodings в extra', () {
+      final t = SoundcloudSource.toTrack(raw())!;
+      expect(t.id, '12345');
+      expect(t.title, 'SC Song');
+      expect(t.artist, 'DJ Test');
+      expect(t.duration, const Duration(milliseconds: 210000));
+      expect(t.artworkUrl, contains('-t500x500'));
+      expect((t.extra['transcodings'] as List), hasLength(1));
+      expect(t.source, SourceType.soundcloud);
+    });
+
+    test('kind != track → null', () {
+      final r = raw()..['kind'] = 'playlist';
+      expect(SoundcloudSource.toTrack(r), isNull);
+    });
+
+    test('без title/user — дефолты', () {
+      final t = SoundcloudSource.toTrack({'id': 1, 'kind': 'track'})!;
+      expect(t.title, 'Без названия');
+      expect(t.artist, 'SoundCloud');
+    });
+  });
+
+  group('YandexSource.toTrack', () {
+    test('happy path: артисты через запятую, обложка, альбом', () {
+      final t = YandexSource.toTrack({
+        'id': 777,
+        'title': 'Ya Song',
+        'artists': [
+          {'name': 'A1'},
+          {'name': 'A2'},
+        ],
+        'albums': [
+          {'title': 'Alb', 'coverUri': 'avatars.yandex.net/get/%%'}
+        ],
+        'durationMs': 180000,
+      });
+      expect(t.id, '777');
+      expect(t.artist, 'A1, A2');
+      expect(t.album, 'Alb');
+      expect(t.artworkUrl, 'https://avatars.yandex.net/get/400x400');
+      expect(t.duration, const Duration(milliseconds: 180000));
+      expect(t.source, SourceType.yandex);
+    });
+
+    test('без артистов → дефолт', () {
+      final t = YandexSource.toTrack({'id': 1, 'title': 'x', 'artists': []});
+      expect(t.artist, 'Яндекс Музыка');
+    });
+  });
+
+  group('YandexSource — подпись потока (самая хрупкая часть)', () {
+    test('tag извлекает содержимое XML-тега', () {
+      const xml = '<root><host>s1.host</host><path>/get</path></root>';
+      expect(YandexSource.tag(xml, 'host'), 's1.host');
+      expect(YandexSource.tag(xml, 'path'), '/get');
+      expect(YandexSource.tag(xml, 'missing'), '');
+    });
+
+    test('buildStreamUrl собирает подписанную mp3-ссылку по известной схеме', () {
+      final url = YandexSource.buildStreamUrl(
+        host: 'h',
+        path: '/abc',
+        ts: '111',
+        s: 'xyz',
+      );
+      // md5('XGRlBW9FXlekgbPrRHuSiA' + 'abc' + 'xyz') — зафиксировано.
+      expect(url,
+          'https://h/get-mp3/f9a64526668963e5f6bcfca5348fed38/111/abc');
+    });
+  });
+}

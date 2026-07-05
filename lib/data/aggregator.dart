@@ -1,3 +1,4 @@
+import '../core/diagnostics.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
@@ -54,7 +55,8 @@ class Aggregator {
     final futures = _active.map((s) async {
       try {
         return await s.search(query, limit: perSource);
-      } catch (_) {
+      } catch (e) {
+        Diagnostics.instance.warn('agg.search', '${s.type.id} «$query»: $e');
         return <Track>[];
       }
     });
@@ -79,7 +81,8 @@ class Aggregator {
     final futures = _active.map((s) async {
       try {
         return await s.feed(limit: perSource);
-      } catch (_) {
+      } catch (e) {
+        Diagnostics.instance.warn('agg.feed', '${s.type.id}: $e');
         return <Track>[];
       }
     });
