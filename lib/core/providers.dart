@@ -32,9 +32,12 @@ final secureStorageProvider =
     Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
 
 /// Внутренний журнал диагностики (кольцевой буфер) — тот же синглтон, в который
-/// пишут источники; экран «Диагностика» подписывается на него.
+/// пишут источники. Обычный Provider (не ChangeNotifierProvider): синглтон живёт
+/// вне жизненного цикла провайдера, иначе Riverpod вызвал бы на нём dispose при
+/// уничтожении ProviderScope. Экран подписывается на изменения через
+/// ListenableBuilder.
 final diagnosticsProvider =
-    ChangeNotifierProvider<Diagnostics>((ref) => Diagnostics.instance);
+    Provider<Diagnostics>((ref) => Diagnostics.instance);
 
 Dio buildAppDio() => Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),

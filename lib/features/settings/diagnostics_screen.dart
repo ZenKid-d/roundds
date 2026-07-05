@@ -16,6 +16,14 @@ class DiagnosticsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final diag = ref.watch(diagnosticsProvider);
+    // Синглтон — не Riverpod-провайдер; на его изменения подписываемся напрямую.
+    return ListenableBuilder(
+      listenable: diag,
+      builder: (context, _) => _build(context, diag),
+    );
+  }
+
+  Widget _build(BuildContext context, Diagnostics diag) {
     // Новые сверху.
     final entries = diag.entries.reversed.toList();
 
