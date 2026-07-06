@@ -465,57 +465,76 @@ class _DownloadsView extends ConsumerWidget {
             style: TextStyle(color: AppColors.white45)),
       );
     }
-    return ListView(
-      children: [
+    // Список скачанных строим лениво (SliverList) — при большой библиотеке
+    // не создаём сотни строк с картинками разом.
+    return CustomScrollView(
+      slivers: [
         if (ctl.playlistBusy)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    'Скачивается плейлист: ${ctl.playlistName} · '
-                    '${(ctl.playlistProgress * 100).round()}%',
-                    style:
-                        TextStyle(fontSize: 12.5, color: AppColors.white60)),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                      value: ctl.playlistProgress, color: accent),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Скачивается плейлист: ${ctl.playlistName} · '
+                      '${(ctl.playlistProgress * 100).round()}%',
+                      style:
+                          TextStyle(fontSize: 12.5, color: AppColors.white60)),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                        value: ctl.playlistProgress, color: accent),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (busy.isNotEmpty)
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) {
+                final t = busy[i];
+                return ListTile(
+                  leading: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(
+                        value: ctl.progressFor(t.uid) == 0
+                            ? null
+                            : ctl.progressFor(t.uid),
+                        strokeWidth: 2,
+                        color: accent),
+                  ),
+                  title: Text(t.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      '${t.artist} · ${(ctl.progressFor(t.uid) * 100).round()}%',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppColors.white45, fontSize: 12)),
+                );
+              },
+              childCount: busy.length,
+            ),
+          ),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) {
+              final t = dl[i];
+              return TrackRow(
+                track: t,
+                onTap: () => playTrack(ref, context, t, queue: dl),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete_outline, color: AppColors.white60),
+                  onPressed: () => ref.read(downloadsProvider).remove(t.uid),
                 ),
-              ],
-            ),
+              );
+            },
+            childCount: dl.length,
           ),
-        for (final t in busy)
-          ListTile(
-            leading: SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                  value: ctl.progressFor(t.uid) == 0
-                      ? null
-                      : ctl.progressFor(t.uid),
-                  strokeWidth: 2,
-                  color: accent),
-            ),
-            title: Text(t.title,
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-                '${t.artist} · ${(ctl.progressFor(t.uid) * 100).round()}%',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: AppColors.white45, fontSize: 12)),
-          ),
-        for (final t in dl)
-          TrackRow(
-            track: t,
-            onTap: () => playTrack(ref, context, t, queue: dl),
-            trailing: IconButton(
-              icon: Icon(Icons.delete_outline, color: AppColors.white60),
-              onPressed: () => ref.read(downloadsProvider).remove(t.uid),
-            ),
-          ),
+        ),
       ],
     );
   }

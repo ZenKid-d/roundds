@@ -66,6 +66,13 @@ Future<void> main() async {
   final cfSeconds = prefs.getDouble('crossfade_seconds');
   if (cfSeconds != null) handler.setCrossfadeSeconds(cfSeconds);
   if (prefs.getBool('crossfade') ?? false) handler.setCrossfade(true);
+  
+  // Настоящий кроссфейд (dual-player) настройки
+  final realCfDuration = prefs.getDouble('crossfade_duration');
+  if (realCfDuration != null) handler.setCrossfadeDuration(realCfDuration);
+  final realCfCurve = prefs.getInt('crossfade_curve');
+  if (realCfCurve != null) handler.setCrossfadeCurve(RoundsAudioHandler.CrossfadeCurve.values[realCfCurve.clamp(0, RoundsAudioHandler.CrossfadeCurve.values.length - 1)]);
+  
   if (prefs.getBool('skip_silence') ?? false) {
     unawaited(handler.setSkipSilence(true));
   }
@@ -86,10 +93,12 @@ Future<void> main() async {
           .map((e) => Track.fromJson((e as Map).cast<String, dynamic>()))
           .toList();
       if (tracks.isNotEmpty) {
+        final posMs =
+            prefs.getInt('last_position_ms') ?? (m['positionMs'] as int? ?? 0);
         unawaited(handler.restoreSession(
           tracks,
           m['index'] as int? ?? 0,
-          Duration(milliseconds: m['positionMs'] as int? ?? 0),
+          Duration(milliseconds: posMs),
         ));
       }
     } catch (_) {/* повреждённая сессия — игнорируем */}

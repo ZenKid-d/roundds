@@ -27,35 +27,51 @@ class Artwork extends StatelessWidget {
     final r = radius ??
         Theme.of(context).extension<AppShapes>()?.radius ??
         16;
-    final placeholder = _placeholder();
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     final isYtThumb = url != null && url!.contains('i.ytimg.com');
-    Widget child = (url == null || url!.isEmpty)
-        ? placeholder
-        : CachedNetworkImage(
-            imageUrl: url!,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => placeholder,
-            // Если sddefault отсутствует — падаем на hqdefault, потом заглушка.
-            errorWidget: (isYtThumb && url!.contains('sddefault'))
-                ? (_, __, ___) => CachedNetworkImage(
-                      imageUrl: url!.replaceAll('sddefault', 'hqdefault'),
-                      width: size,
-                      height: size,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => placeholder,
-                      errorWidget: (_, __, ___) => placeholder,
-                    )
-                : (_, __, ___) => placeholder,
-          );
-    if (isYtThumb) {
-      // Приближаем по центру — обрезаем чёрные полосы прямоугольного превью.
-      child = Transform.scale(scale: _ytZoom, child: child);
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(r),
-      child: SizedBox(width: size, height: size, child: child),
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Декодируем картинку под реальный размер отображения (× DPR), а не в
+        // натуральном разрешении: обложки бывают 1000×1000, а в гриде/списке
+        // показываются мелко — так экономим память и убираем джанк при скролле.
+        final w = size ??
+            (constraints.maxWidth.isFinite ? constraints.maxWidth : null);
+        final cacheW = (w != null && w > 0) ? (w * dpr).round() : null;
+
+        CachedNetworkImage img(String u,
+                {Widget Function(BuildContext, String, Object)? errorWidget}) =>
+            CachedNetworkImage(
+              imageUrl: u,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              memCacheWidth: cacheW,
+              maxWidthDiskCache: cacheW,
+              placeholder: (_, __) => _placeholder(),
+              errorWidget: errorWidget ?? (_, __, ___) => _placeholder(),
+            );
+
+        Widget child;
+        if (url == null || url!.isEmpty) {
+          child = _placeholder();
+        } else if (isYtThumb && url!.contains('sddefault')) {
+          // Если sddefault отсутствует — падаем на hqdefault, потом заглушка.
+          child = img(url!,
+              errorWidget: (_, __, ___) =>
+                  img(url!.replaceAll('sddefault', 'hqdefault')));
+        } else {
+          child = img(url!);
+        }
+        if (isYtThumb) {
+          // Приближаем по центру — обрезаем чёрные полосы превью.
+          child = Transform.scale(scale: _ytZoom, child: child);
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(r),
+          child: SizedBox(width: size, height: size, child: child),
+        );
+      },
     );
   }
 
