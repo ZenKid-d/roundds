@@ -119,7 +119,7 @@ class SettingsScreen extends ConsumerWidget {
           );
         }),
         Consumer(builder: (context, ref, _) {
-          final ss = ref.watch(playbackProvider).skipSilence;
+          final ss = ref.watch(playbackProvider.select((p) => p.skipSilence));
           return SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: ss,
@@ -133,7 +133,7 @@ class SettingsScreen extends ConsumerWidget {
           );
         }),
         Consumer(builder: (context, ref, _) {
-          final on = ref.watch(playbackProvider).normalize;
+          final on = ref.watch(playbackProvider.select((p) => p.normalize));
           return SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: on,
@@ -147,7 +147,7 @@ class SettingsScreen extends ConsumerWidget {
           );
         }),
         Consumer(builder: (context, ref, _) {
-          final on = ref.watch(playbackProvider).gapless;
+          final on = ref.watch(playbackProvider.select((p) => p.gapless));
           return SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: on,

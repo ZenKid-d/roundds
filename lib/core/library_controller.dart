@@ -23,6 +23,15 @@ class LibraryController extends ChangeNotifier {
   final Set<String> _blacklist = {}; // артисты в нижнем регистре
   int _totalListenedMs = 0;
 
+  // Кэш отсортированных топов — пересортировка по всем прослушанным трекам
+  // дорогая, а статы меняются редко (на проигрывание). Сбрасываем при мутации.
+  List<MapEntry<Track, int>>? _topTracksCache;
+  List<MapEntry<String, int>>? _topArtistsCache;
+  void _invalidateStatCaches() {
+    _topTracksCache = null;
+    _topArtistsCache = null;
+  }
+
   /// Вызывается при добавлении лайка (для авто-скачивания). Ставится в провайдере.
   void Function(Track track)? onTrackLiked;
 
@@ -119,6 +128,7 @@ class LibraryController extends ChangeNotifier {
         _statTrack[t.uid] = t;
         _statCount[t.uid] = m['count'] as int;
       }
+      _invalidateStatCaches();
     }
     // Суммарное время прослушивания. Если ещё не считалось — разовая оценка
     // из истории (кол-во прослушиваний × длительность трека).
@@ -149,22 +159,24 @@ class LibraryController extends ChangeNotifier {
 
   /// Топ треков по числу прослушиваний.
   List<MapEntry<Track, int>> topTracks({int limit = 50}) {
-    final entries = _statTrack.values
+    final all = _topTracksCache ??= (_statTrack.values
         .map((t) => MapEntry(t, _statCount[t.uid] ?? 0))
         .toList()
-      ..sort((a, b) => b.value - a.value);
-    return entries.take(limit).toList();
+      ..sort((a, b) => b.value - a.value));
+    return all.take(limit).toList();
   }
 
   /// Топ артистов по суммарному числу прослушиваний.
   List<MapEntry<String, int>> topArtists({int limit = 20}) {
-    final byArtist = <String, int>{};
-    for (final t in _statTrack.values) {
-      byArtist[t.artist] = (byArtist[t.artist] ?? 0) + (_statCount[t.uid] ?? 0);
-    }
-    final entries = byArtist.entries.toList()
-      ..sort((a, b) => b.value - a.value);
-    return entries.take(limit).toList();
+    final all = _topArtistsCache ??= (() {
+      final byArtist = <String, int>{};
+      for (final t in _statTrack.values) {
+        byArtist[t.artist] =
+            (byArtist[t.artist] ?? 0) + (_statCount[t.uid] ?? 0);
+      }
+      return byArtist.entries.toList()..sort((a, b) => b.value - a.value);
+    })();
+    return all.take(limit).toList();
   }
 
   int get totalPlays =>
@@ -206,6 +218,7 @@ class LibraryController extends ChangeNotifier {
     if (_history.length > 50) _history.removeRange(50, _history.length);
     _statTrack[t.uid] = t;
     _statCount[t.uid] = (_statCount[t.uid] ?? 0) + 1;
+    _invalidateStatCaches();
     await _persistHistory();
     await _persistStats();
     notifyListeners();
@@ -291,6 +304,7 @@ class LibraryController extends ChangeNotifier {
       _statTrack[t.uid] = t;
       _statCount[t.uid] = (_statCount[t.uid] ?? 0) + c;
     }
+    _invalidateStatCaches();
     await _persistPlaylists();
     await _prefs.setString(
         'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));
