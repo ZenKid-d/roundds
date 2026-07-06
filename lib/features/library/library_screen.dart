@@ -195,6 +195,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 title: const Text('Из Яндекса (мои плейлисты)'),
                 onTap: () => Navigator.pop(context, 'yandex')),
             ListTile(
+                leading: const FaIcon(FontAwesomeIcons.spotify,
+                    color: Color(0xFF1DB954), size: 20),
+                title: const Text('Из Spotify (ссылка)'),
+                subtitle: Text('Плейлист/альбом → играем из свободных источников',
+                    style: TextStyle(color: AppColors.white45, fontSize: 11)),
+                onTap: () => Navigator.pop(context, 'spotify')),
+            ListTile(
                 leading: const Icon(Icons.format_list_bulleted),
                 title: const Text('Из списка (текст)'),
                 subtitle: Text('«Артист — Трек» построчно',
@@ -214,11 +221,75 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await _importYoutubeLikes();
     } else if (src == 'yandex') {
       await _importYandex();
+    } else if (src == 'spotify') {
+      await _importSpotify();
     } else if (src == 'file') {
       await _importPlaylistFile();
     } else if (src == 'list') {
       await _importFromList();
     }
+  }
+
+  Future<void> _importSpotify() async {
+    final ctrl = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface2,
+        title: const Text('Импорт из Spotify'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'https://open.spotify.com/playlist/…',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text),
+              child: const Text('Импорт')),
+        ],
+      ),
+    );
+    if (url == null || url.trim().isEmpty) return;
+    _showLoading();
+    final ({String name, List<String> queries}) data;
+    try {
+      data = await ref.read(spotifyImportProvider).fetch(url.trim());
+    } catch (e) {
+      if (mounted) Navigator.pop(context); // индикатор
+      _snack('$e');
+      return;
+    }
+    // Матчим каждый трек в нашем агрегаторе (пулом, с сохранением порядка).
+    final matched = List<Track?>.filled(data.queries.length, null);
+    var next = 0;
+    Future<void> worker() async {
+      while (true) {
+        final i = next++;
+        if (i >= data.queries.length) break;
+        try {
+          final r = await ref.read(aggregatorProvider).search(data.queries[i]);
+          if (r.isNotEmpty) matched[i] = r.first;
+        } catch (_) {}
+      }
+    }
+
+    try {
+      await Future.wait([for (var i = 0; i < 5; i++) worker()]);
+    } finally {
+      if (mounted) Navigator.pop(context); // индикатор
+    }
+    final tracks = matched.whereType<Track>().toList();
+    if (tracks.isEmpty) {
+      _snack('Ничего не удалось найти по этому плейлисту');
+      return;
+    }
+    await ref.read(libraryProvider).importPlaylist(data.name, tracks);
+    _snack('Импортировано: ${tracks.length} из ${data.queries.length}');
   }
 
   Future<void> _importFromList() async {

@@ -13,6 +13,7 @@ import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
+import '../data/spotify_import.dart';
 import '../data/translation_service.dart';
 import 'theme/theme_settings.dart';
 import '../playback/audio_handler.dart';
@@ -91,6 +92,9 @@ final audioHandlerProvider = Provider<RoundsAudioHandler>(
 
 final lastfmServiceProvider = Provider<LastfmService>(
     (ref) => LastfmService(ref.read(dioProvider), ref.read(prefsProvider)));
+
+final spotifyImportProvider = Provider<SpotifyImportService>(
+    (ref) => SpotifyImportService(ref.read(dioProvider)));
 
 final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
   final pc = PlaybackController(ref.read(audioHandlerProvider));
