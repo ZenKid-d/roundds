@@ -66,13 +66,6 @@ Future<void> main() async {
   final cfSeconds = prefs.getDouble('crossfade_seconds');
   if (cfSeconds != null) handler.setCrossfadeSeconds(cfSeconds);
   if (prefs.getBool('crossfade') ?? false) handler.setCrossfade(true);
-  
-  // Настоящий кроссфейд (dual-player) настройки
-  final realCfDuration = prefs.getDouble('crossfade_duration');
-  if (realCfDuration != null) handler.setCrossfadeDuration(realCfDuration);
-  final realCfCurve = prefs.getInt('crossfade_curve');
-  if (realCfCurve != null) handler.setCrossfadeCurve(RoundsAudioHandler.CrossfadeCurve.values[realCfCurve.clamp(0, RoundsAudioHandler.CrossfadeCurve.values.length - 1)]);
-  
   if (prefs.getBool('skip_silence') ?? false) {
     unawaited(handler.setSkipSilence(true));
   }

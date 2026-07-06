@@ -13,16 +13,6 @@ import '../domain/models/track.dart';
 
 enum LoopMode { off, all, one }
 
-/// Состояние кроссфейда для управления двумя плеерами.
-enum CrossfadeState {
-  idle,           // Нет активного кроссфейда
-  preparing,      // Подготовка следующего трека (предзагрузка)
-  fadingOut,      // Затухание текущего трека
-  crossfading,    // Одновременное воспроизведение обоих треков
-  fadingIn,       // Появление следующего трека
-  completed,      // Переход завершён, следующий стал текущим
-}
-
 /// Аудио-хендлер поверх audio_service: владеет плеером, очередью и эквалайзером,
 /// отдаёт состояние в уведомление/локскрин и принимает оттуда команды.
 class RoundsAudioHandler extends BaseAudioHandler {
@@ -114,40 +104,6 @@ class RoundsAudioHandler extends BaseAudioHandler {
   // на старте (на паузе). Позицию сохраняем периодически, пока играет.
   SharedPreferences? _sessionPrefs;
   Timer? _sessionTimer;
-
-  // ===== Настоящий кроссфейд с двумя плеерами =====
-  
-  /// Второй плеер для кроссфейда (играет следующий трек во время перехода).
-  late final AudioPlayer _nextPlayer = AudioPlayer(
-    audioPipeline: AudioPipeline(androidAudioEffects: [_loudness, _equalizer]),
-  );
-
-  /// Состояние машины состояний кроссфейда.
-  CrossfadeState _crossfadeState = CrossfadeState.idle;
-  
-  /// Таймер для управления фазами кроссфейда.
-  Timer? _crossfadeTimer;
-  
-  /// Длительность кроссфейда в миллисекундах (общая длительность перехода).
-  int _crossfadeDurationMs = 3000;
-  
-  /// Трек, который готовится к воспроизведению (следующий в очереди).
-  Track? _nextTrack;
-  
-  /// Источник аудио для следующего трека.
-  AudioSource? _nextAudioSource;
-  
-  /// Позиция, с которой нужно начать следующий трек (обычно 0).
-  Duration _nextTrackStartPosition = Duration.zero;
-  
-  /// Кривая затухания/появления громкости.
-  CrossfadeCurve _crossfadeCurve = CrossfadeCurve.linear;
-  
-  /// Колбэк при завершении кроссфейда.
-  VoidCallback? _onCrossfadeComplete;
-
-  /// Кривая затухания/появления громкости для кроссфейда.
-  enum CrossfadeCurve { linear, exponential, logarithmic, sCurve }
 
   void bindSession(SharedPreferences prefs) {
     _sessionPrefs = prefs;
@@ -473,236 +429,6 @@ class RoundsAudioHandler extends BaseAudioHandler {
     } catch (_) {/* не критично */}
   }
 
-  // ===== Настоящий кроссфейд (dual-player) =====
-
-  /// Включает/выключает настоящий кроссфейд с двумя плеерами.
-  Future<void> setRealCrossfade(bool on) async {
-    if (_crossfade == on) return;
-    _crossfade = on;
-    if (!on) {
-      await _cancelCrossfade();
-    }
-    _notify();
-  }
-
-  /// Устанавливает длительность кроссфейда в секундах (0.5–10.0).
-  void setCrossfadeDuration(double seconds) {
-    _crossfadeDurationMs = (seconds.clamp(0.5, 10.0) * 1000).round();
-    _notify();
-  }
-
-  /// Устанавливает кривую кроссфейда.
-  void setCrossfadeCurve(CrossfadeCurve curve) {
-    _crossfadeCurve = curve;
-    _notify();
-  }
-
-  /// Отменяет активный кроссфейд и очищает ресурсы.
-  Future<void> _cancelCrossfade() async {
-    _crossfadeTimer?.cancel();
-    _crossfadeTimer = null;
-    _crossfadeState = CrossfadeState.idle;
-    _nextTrack = null;
-    _nextAudioSource = null;
-    await _nextPlayer.stop();
-    await _nextPlayer.setAudioSource(AudioSource.uri(Uri.parse('about:blank')));
-    _player.setVolume(1.0);
-    _onCrossfadeComplete = null;
-  }
-
-  /// Вычисляет громкость по кривой для заданного прогресса (0.0–1.0).
-  double _crossfadeVolume(double progress, bool fadeIn) {
-    double curved;
-    switch (_crossfadeCurve) {
-      case CrossfadeCurve.linear:
-        curved = progress;
-        break;
-      case CrossfadeCurve.exponential:
-        curved = pow(progress, 2).toDouble();
-        break;
-      case CrossfadeCurve.logarithmic:
-        curved = log(progress + 1) / log(2);
-        break;
-      case CrossfadeCurve.sCurve:
-        curved = sin(progress * pi / 2);
-        break;
-    }
-    return fadeIn ? curved : (1.0 - curved);
-  }
-
-  /// Запускает кроссфейд к следующему треку.
-  Future<void> _startCrossfadeToNext() async {
-    if (!_crossfade) return;
-    if (_crossfadeState != CrossfadeState.idle) return;
-    
-    final nextIdx = _nextIndex();
-    if (nextIdx == null) return; // нет следующего трека
-    
-    final nextTrack = _queue[nextIdx];
-    _nextTrack = nextTrack;
-    _crossfadeState = CrossfadeState.preparing;
-    _notify();
-
-    try {
-      // Резолвим поток для следующего трека
-      final local = localFileResolver?.call(nextTrack.uid);
-      AudioSource nextSource;
-      if (local != null) {
-        nextSource = AudioSource.uri(Uri.file(local));
-      } else {
-        final stream = await _aggregator.resolveStreamWithFallback(nextTrack);
-        nextSource = AudioSource.uri(stream.uri, headers: stream.headers);
-      }
-      _nextAudioSource = nextSource;
-
-      // Подготавливаем следующий плеер
-      await _nextPlayer.setAudioSource(nextSource, initialPosition: Duration.zero);
-      _nextPlayer.setVolume(0.0);
-      
-      _crossfadeState = CrossfadeState.fadingOut;
-      _notify();
-
-      // Запускаем таймер кроссфейда
-      _runCrossfadeTimer();
-      
-    } catch (e) {
-      // Если не удалось подготовить следующий трек, просто играем дальше без кроссфейда
-      await _cancelCrossfade();
-    }
-  }
-
-  /// Основной таймер кроссфейда — управляет фазами перехода.
-  void _runCrossfadeTimer() {
-    const tickMs = 50; // частота обновления громкости
-    final totalTicks = (_crossfadeDurationMs / tickMs).round();
-    int currentTick = 0;
-
-    _crossfadeTimer?.cancel();
-    _crossfadeTimer = Timer.periodic(Duration(milliseconds: tickMs), (timer) async {
-      currentTick++;
-      final progress = (currentTick / totalTicks).clamp(0.0, 1.0);
-
-      switch (_crossfadeState) {
-        case CrossfadeState.fadingOut:
-          // Фаза 1: затухание текущего трека (первые 40% времени)
-          if (progress <= 0.4) {
-            final fadeProgress = progress / 0.4;
-            _player.setVolume(_crossfadeVolume(fadeProgress, false));
-          } else {
-            // Переходим к фазе одновременного воспроизведения
-            _crossfadeState = CrossfadeState.crossfading;
-            _notify();
-            await _nextPlayer.play();
-          }
-          break;
-
-        case CrossfadeState.crossfading:
-          // Фаза 2: одновременное воспроизведение (40%-70% времени)
-          if (progress <= 0.7) {
-            final fadeProgress = (progress - 0.4) / 0.3;
-            final fadeOutVol = _crossfadeVolume(1.0, false); // текущий на минимуме
-            final fadeInVol = _crossfadeVolume(fadeProgress, true);
-            _player.setVolume(fadeOutVol);
-            _nextPlayer.setVolume(fadeInVol);
-          } else {
-            // Переходим к фазе появления следующего
-            _crossfadeState = CrossfadeState.fadingIn;
-            _notify();
-          }
-          break;
-
-        case CrossfadeState.fadingIn:
-          // Фаза 3: появление следующего трека (70%-100% времени)
-          if (progress <= 1.0) {
-            final fadeProgress = (progress - 0.7) / 0.3;
-            _nextPlayer.setVolume(_crossfadeVolume(fadeProgress, true));
-          } else {
-            // Кроссфейд завершён
-            await _completeCrossfade();
-            timer.cancel();
-          }
-          break;
-
-        default:
-          timer.cancel();
-          break;
-      }
-    });
-  }
-
-  /// Завершает кроссфейд: следующий плеер становится основным.
-  Future<void> _completeCrossfade() async {
-    _crossfadeState = CrossfadeState.completed;
-    
-    // Останавливаем старый плеер
-    await _player.stop();
-    
-    // Меняем плееры местами: _nextPlayer становится _player
-    final oldPlayer = _player;
-    _player = _nextPlayer;
-    _nextPlayer = oldPlayer;
-    
-    // Сбрасываем громкость нового основного плеера
-    await _player.setVolume(1.0);
-    
-    // Обновляем индекс очереди
-    final nextIdx = _nextIndex();
-    if (nextIdx != null) {
-      _index = nextIdx;
-    }
-    
-    // Обновляем mediaItem для уведомления/локскрина
-    final cur = current;
-    if (cur != null) {
-      mediaItem.add(_toMediaItem(cur));
-      onTrackStarted?.call(cur);
-    }
-    
-    // Очищаем состояние кроссфейда
-    _crossfadeState = CrossfadeState.idle;
-    _nextTrack = null;
-    _nextAudioSource = null;
-    _onCrossfadeComplete?.call();
-    _onCrossfadeComplete = null;
-    
-    _notify();
-    
-    // Предзагружаем следующий за следующим
-    unawaited(_preloadNext());
-    unawaited(_maybeExtendRadio());
-    
-    // Сохраняем сессию
-    _saveSession();
-  }
-
-  /// Переопределяем advance для использования кроссфейда.
-  Future<void> _advanceWithCrossfade({required bool auto}) async {
-    if (_queue.isEmpty) return;
-    if (auto && _repeat == LoopMode.one) {
-      await _load();
-      return;
-    }
-    
-    final nextIdx = _nextIndex();
-    if (nextIdx == null) {
-      if (_repeat == LoopMode.all) {
-        _index = 0;
-        await _load();
-      }
-      return;
-    }
-    
-    if (_crossfade && _crossfadeState == CrossfadeState.idle && auto) {
-      // Пытаемся сделать кроссфейд
-      await _startCrossfadeToNext();
-      // _completeCrossfade обновит _index и загрузит следующий
-    } else {
-      // Обычный переход
-      _index = nextIdx;
-      await _load();
-    }
-  }
-
   // --- Бесшовное воспроизведение (эксперим.) ---
 
   Future<AudioSource> _sourceForTrack(Track t) async {
@@ -865,12 +591,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
       await _player.pause();
       return;
     }
-    // Используем кроссфейд если включён, иначе обычный переход
-    if (_crossfade) {
-      await _advanceWithCrossfade(auto: true);
-    } else {
-      await _advance(auto: true);
-    }
+    await _advance(auto: true);
   }
 
   Future<void> _advance({required bool auto}) async {
@@ -920,13 +641,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() async {
-    if (_crossfade && _crossfadeState == CrossfadeState.idle) {
-      await _advanceWithCrossfade(auto: false);
-    } else {
-      await _advance(auto: false);
-    }
-  }
+  Future<void> skipToNext() => _advance(auto: false);
 
   @override
   Future<void> skipToPrevious() async {
