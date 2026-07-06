@@ -127,6 +127,14 @@ class PlaybackController extends ChangeNotifier {
   void setCrossfade(bool on) => _handler.setCrossfade(on);
   double get crossfadeSeconds => _handler.crossfadeSeconds;
   void setCrossfadeSeconds(double s) => _handler.setCrossfadeSeconds(s);
+  
+  // Настоящий кроссфейд (dual-player)
+  Future<void> setRealCrossfade(bool on) => _handler.setRealCrossfade(on);
+  void setCrossfadeDuration(double seconds) => _handler.setCrossfadeDuration(seconds);
+  void setCrossfadeCurve(RoundsAudioHandler.CrossfadeCurve curve) => _handler.setCrossfadeCurve(curve);
+  RoundsAudioHandler.CrossfadeCurve get crossfadeCurve => _handler._crossfadeCurve;
+  RoundsAudioHandler.CrossfadeState get crossfadeState => _handler._crossfadeState;
+
   bool get skipSilence => _handler.skipSilence;
   Future<void> setSkipSilence(bool on) => _handler.setSkipSilence(on);
   bool get normalize => _handler.normalize;

@@ -75,8 +75,8 @@ class SettingsScreen extends ConsumerWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: cf,
-                title: const Text('Плавные переходы (кроссфейд)'),
-                subtitle: Text('Затухание в конце и появление в начале трека',
+                title: const Text('Плавные переходы (кроссфейд-лайт)'),
+                subtitle: Text('Затухание в конце и появление в начале трека (один плеер)',
                     style: TextStyle(color: AppColors.white45, fontSize: 11)),
                 onChanged: (v) {
                   ref.read(playbackProvider).setCrossfade(v);
@@ -115,6 +115,84 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: pc.crossfade, // real crossfade uses same toggle
+                title: const Text('Настоящий кроссфейд (два плеера)'),
+                subtitle: Text('Одновременное воспроизведение двух треков при переходе (как в Spotify)',
+                    style: TextStyle(color: AppColors.white45, fontSize: 11)),
+                onChanged: (v) async {
+                  await ref.read(playbackProvider).setRealCrossfade(v);
+                  ref.read(prefsProvider).setBool('real_crossfade', v);
+                },
+              ),
+              if (pc.crossfade) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 4),
+                  child: Row(
+                    children: [
+                      Text('Длительность',
+                          style: TextStyle(
+                              color: AppColors.white60, fontSize: 12)),
+                      Expanded(
+                        child: Slider(
+                          value: pc.crossfadeSeconds.clamp(0.5, 10.0),
+                          min: 0.5,
+                          max: 10.0,
+                          divisions: 95,
+                          label:
+                              '${pc.crossfadeSeconds.toStringAsFixed(1)} с',
+                          onChanged: (v) {
+                            ref.read(playbackProvider).setCrossfadeDuration(v);
+                            ref
+                                .read(prefsProvider)
+                                .setDouble('crossfade_duration', v);
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 34,
+                        child: Text('${pc.crossfadeSeconds.toStringAsFixed(1)}с',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 4, top: 4),
+                  child: Row(
+                    children: [
+                      Text('Кривая',
+                          style: TextStyle(
+                              color: AppColors.white60, fontSize: 12)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButton<RoundsAudioHandler.CrossfadeCurve>(
+                          value: pc.crossfadeCurve,
+                          dropdownColor: AppColors.surface1,
+                          style: const TextStyle(color: Colors.white),
+                          underline: const SizedBox(),
+                          items: RoundsAudioHandler.CrossfadeCurve.values
+                              .map((c) => DropdownMenuItem(
+                                    value: c,
+                                    child: Text(_crossfadeCurveLabel(c)),
+                                  ))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              ref.read(playbackProvider).setCrossfadeCurve(v);
+                              ref
+                                  .read(prefsProvider)
+                                  .setInt('crossfade_curve', v.index);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           );
         }),
@@ -906,6 +984,19 @@ class _UpdateTile extends ConsumerWidget {
           : const Icon(Icons.chevron_right),
       onTap: checking ? null : () => checkForUpdate(context, ref, silent: false),
     );
+  }
+}
+
+String _crossfadeCurveLabel(RoundsAudioHandler.CrossfadeCurve curve) {
+  switch (curve) {
+    case RoundsAudioHandler.CrossfadeCurve.linear:
+      return 'Линейная';
+    case RoundsAudioHandler.CrossfadeCurve.exponential:
+      return 'Экспоненциальная';
+    case RoundsAudioHandler.CrossfadeCurve.logarithmic:
+      return 'Логарифмическая';
+    case RoundsAudioHandler.CrossfadeCurve.sCurve:
+      return 'S-образная';
   }
 }
 
