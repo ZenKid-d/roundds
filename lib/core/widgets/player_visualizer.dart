@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../providers.dart';
+import '../theme/theme_settings.dart';
 import '../../data/visualizer_channel.dart';
 
 /// Спектр-визуализатор под обложкой. При включённом «реальном» режиме берёт FFT
@@ -37,6 +38,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   StreamSubscription<List<double>>? _sub;
   bool _started = false;
   bool _enabled = false;
+  bool _reduceAnim = false; // «минимум анимаций» — не крутим декоративную волну
   List<double> _smooth = [];
 
   @override
@@ -60,6 +62,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   void didUpdateWidget(covariant PlayerVisualizer old) {
     super.didUpdateWidget(old);
     _apply();
+    _applyDecorAnim(); // playing мог измениться
   }
 
   void _apply() {
@@ -105,8 +108,19 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
     _started = false;
     _smooth = [];
     VisualizerChannel.instance.stop();
-    // Реальный захват выключен — возвращаем декоративную волну.
-    if (resumeDecor && mounted && !_c.isAnimating) _c.repeat();
+    // Реальный захват выключен — возвращаем декоративную волну (если разрешена).
+    if (resumeDecor && mounted) _applyDecorAnim();
+  }
+
+  /// Декоративную волну крутим, только если анимации не в режиме «минимум» и
+  /// полосы не двигает реальный FFT (там перерисовка через setState).
+  void _applyDecorAnim() {
+    final realDriving = _enabled && widget.playing && _smooth.isNotEmpty;
+    if (_reduceAnim || realDriving) {
+      if (_c.isAnimating) _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
   }
 
   @override
@@ -134,12 +148,17 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
 
   @override
   Widget build(BuildContext context) {
-    // Реактивно на настройку: включили/выключили — стартуем/останавливаем.
+    // Реактивно на настройки: реальный визуализатор и уровень анимаций.
     final enabled = ref.watch(realVisualizerProvider);
-    if (enabled != _enabled) {
+    final reduce = ref.watch(themeSettingsProvider).animLevel == AnimLevel.min;
+    if (enabled != _enabled || reduce != _reduceAnim) {
       _enabled = enabled;
+      _reduceAnim = reduce;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _apply();
+        if (mounted) {
+          _apply();
+          _applyDecorAnim();
+        }
       });
     }
     return RepaintBoundary(
