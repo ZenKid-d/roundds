@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
 import '../domain/models/playable_stream.dart';
@@ -97,6 +99,74 @@ class RoundsAudioHandler extends BaseAudioHandler {
   bool _recovering = false;
   int _recoverAttempts = 0;
   String? _recoverUid;
+
+  // «Продолжить с места»: очередь+индекс+позицию храним в prefs, восстанавливаем
+  // на старте (на паузе). Позицию сохраняем периодически, пока играет.
+  SharedPreferences? _sessionPrefs;
+  Timer? _sessionTimer;
+
+  void bindSession(SharedPreferences prefs) {
+    _sessionPrefs = prefs;
+    _sessionTimer?.cancel();
+    _sessionTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (_player.playing) _saveSession();
+    });
+  }
+
+  void _saveSession() {
+    final prefs = _sessionPrefs;
+    final cur = current;
+    if (prefs == null || cur == null || _queue.isEmpty) return;
+    try {
+      prefs.setString(
+        'last_session',
+        jsonEncode({
+          'tracks': _queue.map((t) => t.toJson()).toList(),
+          'index': _index,
+          'positionMs': _player.position.inMilliseconds,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  /// Восстанавливает прошлую сессию: ставит очередь и грузит текущий трек на
+  /// паузе с сохранённой позиции. Резолв потока — в фоне (не блокирует старт).
+  Future<void> restoreSession(
+      List<Track> queue, int index, Duration position) async {
+    if (queue.isEmpty || index < 0 || index >= queue.length) return;
+    if (_queue.isNotEmpty) return; // уже что-то играем — не перетираем
+    _queue
+      ..clear()
+      ..addAll(queue);
+    _index = index;
+    _notify();
+    await _loadPaused(position);
+  }
+
+  Future<void> _loadPaused(Duration at) async {
+    final track = current;
+    if (track == null) return;
+    _loading = true;
+    _notify();
+    mediaItem.add(_toMediaItem(track));
+    try {
+      final local = localFileResolver?.call(track.uid);
+      final AudioSource src;
+      if (local != null) {
+        src = AudioSource.uri(Uri.file(local));
+      } else {
+        final stream = await _aggregator.resolveStreamWithFallback(track);
+        src = AudioSource.uri(stream.uri, headers: stream.headers);
+      }
+      // initialPosition — стартовая позиция без play(): трек ждёт на паузе.
+      await _player.setAudioSource(src, initialPosition: at);
+    } catch (_) {
+      // Не смогли восстановить поток — трек остаётся в очереди, сыграет по тапу.
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
 
   void Function()? onUiChanged;
   void _notify() => onUiChanged?.call();
@@ -245,6 +315,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
         _player.play();
         _error = null;
         lastErr = null;
+        _saveSession(); // запомнить трек/очередь для «продолжить с места»
         unawaited(_preloadNext());
         unawaited(_maybeExtendRadio());
         break;
@@ -553,7 +624,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   Future<void> play() => _player.play();
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+    _saveSession(); // зафиксировать позицию на паузе для «продолжить с места»
+  }
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);

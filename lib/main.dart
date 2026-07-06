@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'data/sources/soundcloud_source.dart';
 import 'data/sources/yandex_source.dart';
 import 'data/sources/youtube_music_source.dart';
 import 'domain/models/source_type.dart';
+import 'domain/models/track.dart';
 import 'playback/audio_handler.dart';
 
 Future<void> main() async {
@@ -72,6 +74,25 @@ Future<void> main() async {
   }
   if (prefs.getBool('gapless') ?? false) {
     unawaited(handler.setGapless(true));
+  }
+
+  // «Продолжить с места»: восстанавливаем прошлую сессию (на паузе).
+  handler.bindSession(prefs);
+  final rawSession = prefs.getString('last_session');
+  if (rawSession != null) {
+    try {
+      final m = jsonDecode(rawSession) as Map<String, dynamic>;
+      final tracks = (m['tracks'] as List)
+          .map((e) => Track.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+      if (tracks.isNotEmpty) {
+        unawaited(handler.restoreSession(
+          tracks,
+          m['index'] as int? ?? 0,
+          Duration(milliseconds: m['positionMs'] as int? ?? 0),
+        ));
+      }
+    } catch (_) {/* повреждённая сессия — игнорируем */}
   }
 
   runApp(
