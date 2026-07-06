@@ -7,6 +7,7 @@ import 'share_card.dart';
 import 'theme/app_colors.dart';
 import 'widgets/artwork.dart';
 import '../domain/models/track.dart';
+import '../features/album/album_screen.dart';
 
 /// Контекстное меню трека (по долгому тапу): играть следующим / в очередь /
 /// радио / скачать / в плейлист / избранное.
@@ -95,6 +96,16 @@ Future<void> showTrackMenu(
               },
             );
           }),
+          if ((track.album ?? '').isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.album),
+              title: const Text('Открыть альбом'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AlbumScreen(seed: track)));
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.ios_share),
             title: const Text('Поделиться карточкой'),

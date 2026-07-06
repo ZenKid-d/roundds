@@ -330,6 +330,46 @@ void main() {
       final t = YandexSource.toTrack({'id': 1, 'title': 'x', 'artists': []});
       expect(t.artist, 'Яндекс Музыка');
     });
+
+    test('albumId кладётся в extra (для страницы альбома)', () {
+      final t = YandexSource.toTrack({
+        'id': 1,
+        'title': 'x',
+        'albums': [
+          {'id': 555, 'title': 'Alb'}
+        ],
+      });
+      expect(t.extra['albumId'], '555');
+    });
+
+    test('без альбома — extra пустой', () {
+      final t = YandexSource.toTrack({'id': 1, 'title': 'x'});
+      expect(t.extra['albumId'], isNull);
+    });
+  });
+
+  group('YandexSource.albumTracksFromResult (треклист альбома)', () {
+    test('собирает треки из всех томов плоско, по порядку', () {
+      final tracks = YandexSource.albumTracksFromResult({
+        'title': 'Some Album',
+        'volumes': [
+          [
+            {'id': 1, 'title': 'A'},
+            {'id': 2, 'title': 'B'},
+          ],
+          [
+            {'id': 3, 'title': 'C'},
+          ],
+        ],
+      });
+      expect(tracks.map((t) => t.id).toList(), ['1', '2', '3']);
+      expect(tracks.map((t) => t.title).toList(), ['A', 'B', 'C']);
+    });
+
+    test('нет volumes → пусто', () {
+      expect(YandexSource.albumTracksFromResult({'title': 'x'}), isEmpty);
+      expect(YandexSource.albumTracksFromResult(null), isEmpty);
+    });
   });
 
   group('YandexSource — подпись потока (самая хрупкая часть)', () {

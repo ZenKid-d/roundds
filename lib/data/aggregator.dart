@@ -3,6 +3,7 @@ import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import '../domain/music_source.dart';
+import 'sources/yandex_source.dart';
 import 'sources/youtube_music_source.dart';
 
 /// Сводит включённые источники в единый поиск/ленту и маршрутизирует
@@ -93,6 +94,24 @@ class Aggregator {
       _feedAt = DateTime.now();
     }
     return result;
+  }
+
+  /// Треклист альбома, к которому принадлежит [track]. Нативно умеет Яндекс
+  /// (по albumId из extra); для остальных источников — фолбэк на поиск
+  /// «артист альбом», чтобы страница альбома всё равно что-то показала.
+  Future<List<Track>> albumTracks(Track track) async {
+    final albumId = track.extra['albumId'] as String?;
+    final src = _sources[track.source];
+    if (src is YandexSource &&
+        albumId != null &&
+        _enabled.contains(SourceType.yandex)) {
+      try {
+        final tracks = await src.albumTracks(albumId);
+        if (tracks.isNotEmpty) return tracks;
+      } catch (_) {/* уходим в фолбэк-поиск */}
+    }
+    final q = '${track.artist} ${track.album ?? ''}'.trim();
+    return q.isEmpty ? const [] : search(q);
   }
 
   Future<PlayableStream> resolveStream(Track track) =>

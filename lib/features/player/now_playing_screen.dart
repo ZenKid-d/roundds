@@ -13,6 +13,7 @@ import '../../core/widgets/track_card.dart';
 import '../../core/widgets/vinyl_disc.dart';
 import '../../domain/models/track.dart';
 import '../../playback/audio_handler.dart';
+import '../album/album_screen.dart';
 import '../artist/artist_screen.dart';
 import '../common/track_list_screen.dart';
 import 'equalizer_screen.dart';
@@ -147,6 +148,28 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                       style:
                           TextStyle(fontSize: 13, color: AppColors.white45)),
                 ),
+                if ((track.album ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => AlbumScreen(seed: track),
+                    )),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.album, size: 13, color: AppColors.white45),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(track.album!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.white45)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 11),
                 ServicePill(track.source),
                 if (pc.error != null) _errorBox(context, ref, track, pc.error!),

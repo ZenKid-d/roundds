@@ -216,20 +216,51 @@ class YandexSource implements MusicSource {
         .whereType<String>()
         .join(', ');
     final albums = (j['albums'] as List? ?? []);
-    String? cover = j['coverUri'] as String? ??
-        (albums.isNotEmpty ? (albums.first as Map)['coverUri'] as String? : null);
+    final firstAlbum = albums.isNotEmpty ? albums.first as Map : null;
+    String? cover =
+        j['coverUri'] as String? ?? firstAlbum?['coverUri'] as String?;
     if (cover != null) cover = 'https://${cover.replaceAll('%%', '400x400')}';
+    // albumId кладём в extra — по нему открывается страница альбома (треклист).
+    final albumId = firstAlbum?['id'];
     return Track(
       id: '${j['id'] ?? j['realId']}',
       title: j['title'] as String? ?? 'Без названия',
       artist: artists.isEmpty ? 'Яндекс Музыка' : artists,
-      album: albums.isNotEmpty ? (albums.first as Map)['title'] as String? : null,
+      album: firstAlbum?['title'] as String?,
       artworkUrl: cover,
       duration: j['durationMs'] != null
           ? Duration(milliseconds: j['durationMs'] as int)
           : null,
       source: SourceType.yandex,
+      extra: albumId != null ? {'albumId': '$albumId'} : const {},
     );
+  }
+
+  /// Треклист альбома по его id (для страницы альбома). Ответ Яндекса — том(а)
+  /// (`volumes`) со списками треков; парсер собирает их плоско.
+  Future<List<Track>> albumTracks(String albumId, {int limit = 200}) async {
+    _requireToken();
+    try {
+      final r = await _dio.get('$_base/albums/$albumId/with-tracks',
+          options: _opts);
+      return albumTracksFromResult(r.data['result']).take(limit).toList();
+    } catch (e) {
+      Diagnostics.instance.warn('ya.album', '$albumId: $e');
+      return const [];
+    }
+  }
+
+  @visibleForTesting
+  static List<Track> albumTracksFromResult(dynamic result) {
+    final volumes = (result?['volumes'] as List? ?? const []);
+    final out = <Track>[];
+    for (final vol in volumes) {
+      if (vol is! List) continue;
+      for (final t in vol) {
+        if (t is Map) out.add(toTrack(t.cast<String, dynamic>()));
+      }
+    }
+    return out;
   }
 
   void _requireToken() {
