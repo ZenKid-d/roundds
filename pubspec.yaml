@@ -49,13 +49,13 @@ dependencies:
   youtube_explode_dart: ^2.2.1
 
   # Storage
-  flutter_secure_storage: ^9.2.2
+  flutter_secure_storage: ^10.3.1
   shared_preferences: ^2.2.3
   path_provider: ^2.1.4
 
   # Бэкап/экспорт библиотеки
-  file_picker: ^8.1.2
-  share_plus: ^10.1.2
+  file_picker: ^12.0.0-beta.7
+  share_plus: ^13.2.0
 
   # Рендер карточки трека в картинку для «поделиться»
   screenshot: ^3.0.0
@@ -64,7 +64,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
 
   # Обновление приложения (проверка релизов + установка APK)
-  package_info_plus: ^8.0.0
+  package_info_plus: ^10.2.0
   open_filex: ^4.5.0
 
   # Разрешение микрофона для реального визуализатора (Android Visualizer API)

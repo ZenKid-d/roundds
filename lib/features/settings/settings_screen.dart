@@ -251,8 +251,12 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/roundds_backup.json');
     await file.writeAsString(json);
-    await Share.shareXFiles([XFile(file.path)],
-        text: 'Roundds — резервная копия библиотеки');
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        text: 'Roundds — резервная копия библиотеки',
+      ),
+    );
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(context)
@@ -262,9 +266,9 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
-  final res = await FilePicker.platform
-      .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-  final path = res?.files.single.path;
+  final file = await FilePicker.pickFile(
+      type: FileType.custom, allowedExtensions: ['json']);
+  final path = file?.path;
   if (path == null) return;
   try {
     final content = await File(path).readAsString();

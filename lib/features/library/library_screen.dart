@@ -279,9 +279,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _importPlaylistFile() async {
-    final res = await FilePicker.platform
-        .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-    final path = res?.files.single.path;
+    final file = await FilePicker.pickFile(
+        type: FileType.custom, allowedExtensions: ['json']);
+    final path = file?.path;
     if (path == null) return;
     try {
       final data = jsonDecode(await File(path).readAsString());
@@ -594,8 +594,12 @@ Future<void> _exportPlaylist(PlaylistX pl) async {
     final safe = pl.name.replaceAll(RegExp(r'[^\wА-Яа-яЁё -]'), '_');
     final file = File('${dir.path}/$safe.json');
     await file.writeAsString(json);
-    await Share.shareXFiles([XFile(file.path)],
-        text: 'Roundds — плейлист «${pl.name}»');
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        text: 'Roundds — плейлист «${pl.name}»',
+      ),
+    );
   } catch (_) {/* отмена/ошибка шаринга не критична */}
 }
 
