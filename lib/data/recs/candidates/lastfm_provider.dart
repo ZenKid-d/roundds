@@ -39,14 +39,39 @@ class LastFmProvider implements CandidateProvider {
     }
     for (final tag in query.seedTags) {
       final key = 'lastfm:tagtop:$tag'.toLowerCase();
-      out.addAll(await _cached(
-        key,
-        () async => [
-          for (final t
-              in await _lastfm.getTagTopTracks(tag, limit: query.limitPerSeed))
-            RawCandidate(artist: t.artist, title: t.title, tags: [tag]),
-        ],
-      ));
+      out.addAll(await _cached(key, () async {
+        final tracks =
+            await _lastfm.getTagTopTracks(tag, limit: query.limitPerSeed);
+        final n = tracks.length;
+        return [
+          for (var i = 0; i < n; i++)
+            RawCandidate(
+              artist: tracks[i].artist,
+              title: tracks[i].title,
+              tags: [tag],
+              popularity: 1.0 - i / n, // порядок Last.fm = популярность
+            ),
+        ];
+      }));
+    }
+    // «Популярное»: хиты любимых артистов профиля (популярное во вкусе).
+    if (query.wantPopular) {
+      for (final artist in query.seedArtists) {
+        final key = 'lastfm:artisttop:$artist'.toLowerCase();
+        out.addAll(await _cached(key, () async {
+          final tracks = await _lastfm.getArtistTopTracks(artist, limit: 12);
+          final n = tracks.length;
+          return [
+            for (var i = 0; i < n; i++)
+              RawCandidate(
+                artist: tracks[i].artist,
+                title: tracks[i].title,
+                weight: 1.0 - i / n, // приоритет резолва
+                popularity: 1.0 - i / n,
+              ),
+          ];
+        }));
+      }
     }
     return out;
   }
@@ -65,7 +90,13 @@ class LastFmProvider implements CandidateProvider {
 
   static String _encode(List<RawCandidate> cs) => jsonEncode([
         for (final c in cs)
-          {'a': c.artist, 't': c.title, 'w': c.weight, 'g': c.tags}
+          {
+            'a': c.artist,
+            't': c.title,
+            'w': c.weight,
+            'g': c.tags,
+            'p': c.popularity
+          }
       ]);
 
   static List<RawCandidate> _decode(String raw) {
@@ -78,6 +109,7 @@ class LastFmProvider implements CandidateProvider {
             title: (e['t'] as String?) ?? '',
             weight: (e['w'] as num?)?.toDouble() ?? 0,
             tags: [for (final g in (e['g'] as List? ?? const [])) g as String],
+            popularity: (e['p'] as num?)?.toDouble() ?? 0,
           ),
       ].where((c) => c.artist.isNotEmpty && c.title.isNotEmpty).toList();
     } catch (_) {

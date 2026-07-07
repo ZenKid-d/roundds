@@ -168,4 +168,22 @@ void main() {
       expect(out.first.artist, 'A');
     });
   });
+
+  group('WaveEngine.rankWave — популярное', () {
+    test('в режиме «Популярное» популярный кандидат впереди непопулярного', () {
+      final out = WaveEngine.rankWave(
+        [_wc('X', 'x'), _wc('Hit', 'hit', pop: 1.0)],
+        profile: TasteProfile.empty,
+        cooldown: const {},
+        dislikedKeys: const {},
+        weights: ScoreWeights.popular,
+        constraints: WaveConstraints.balanced,
+        recentArtists: const [],
+        servedKeys: const {},
+        nowSec: 0,
+        limit: 10,
+      );
+      expect(out.first.artist, 'Hit');
+    });
+  });
 }

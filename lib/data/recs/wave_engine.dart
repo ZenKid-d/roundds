@@ -117,6 +117,8 @@ class WaveEngine {
       // Настроение подмешивает свои теги в сиды: tag.getTopTracks отдаст треки
       // этого настроения (при наличии Last.fm).
       seedTags: [..._profile.topTags(limit: 4), ...moodTags],
+      // «Популярное»: тянем хиты любимых артистов (популярное во вкусе).
+      wantPopular: _mode() == WaveMode.popular,
     );
     final cooldown = await _store.cooldownMap();
     final ranked = rankWave(
@@ -145,12 +147,14 @@ class WaveEngine {
     List<Track> seeds, {
     List<String> seedArtists = const [],
     List<String> seedTags = const [],
+    bool wantPopular = false,
   }) async {
     final query = CandidateQuery(
       seeds: seeds,
       seedArtists: seedArtists,
       seedTags: seedTags,
       limitPerSeed: 15,
+      wantPopular: wantPopular,
     );
     final available = <CandidateProvider>[];
     for (final p in _providers) {

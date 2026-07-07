@@ -63,7 +63,7 @@ class ScoreWeights {
 
   /// «Популярное»: вес популярности вверх.
   static const popular = ScoreWeights(
-      wSim: 1.0, wNov: 0.5, wPop: 1.2, wRep: 0.8, explorationShare: 0.25);
+      wSim: 1.2, wNov: 0.15, wPop: 1.6, wRep: 0.7, explorationShare: 0.08);
 
   static const balanced = ScoreWeights();
 }

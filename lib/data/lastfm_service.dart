@@ -224,6 +224,27 @@ class LastfmService {
     ].where((e) => e.artist.isNotEmpty && e.title.isNotEmpty).toList();
   }
 
+  /// artist.getTopTracks → популярные треки артиста (порядок = популярность).
+  /// Для режима «Популярное» — хиты любимых артистов пользователя.
+  Future<List<({String artist, String title})>> getArtistTopTracks(
+      String artist,
+      {int limit = 20}) async {
+    final j = await _read({
+      'method': 'artist.gettoptracks',
+      'artist': artist,
+      'autocorrect': '1',
+      'limit': '$limit',
+    });
+    final list = _nodeList(_asMap(j?['toptracks'])?['track']);
+    return [
+      for (final m in list)
+        (
+          artist: _artistName(m).isEmpty ? artist : _artistName(m),
+          title: (m['name'] as String?) ?? ''
+        )
+    ].where((e) => e.title.isNotEmpty).toList();
+  }
+
   static List<String> _tagNames(Map<String, dynamic>? j, int limit) {
     final list = _nodeList(_asMap(j?['toptags'])?['tag']);
     return [

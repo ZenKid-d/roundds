@@ -44,12 +44,16 @@ class CandidateQuery {
     this.seedArtists = const [],
     this.seedTags = const [],
     this.limitPerSeed = 20,
+    this.wantPopular = false,
   });
 
   final List<Track> seeds;
   final List<String> seedArtists;
   final List<String> seedTags;
   final int limitPerSeed;
+
+  /// Режим «Популярное»: тянуть топ-треки артистов профиля (популярное во вкусе).
+  final bool wantPopular;
 }
 
 abstract class CandidateProvider {
