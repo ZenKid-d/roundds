@@ -43,6 +43,11 @@ class PlaybackController extends ChangeNotifier {
   void Function(Track track)? onNowPlaying;
   void Function(Track track, int startedAtEpochSec)? onScrobble;
 
+  /// Recs v2: трек начался / завершился (с реально прослушанным временем) —
+  /// для event log рекомендательного движка.
+  void Function(Track track)? onTrackStartedSignal;
+  void Function(Track track, int playedMs, int durationMs)? onTrackEnded;
+
   // Учёт проигранного времени текущего трека — для скроббла по правилам Last.fm.
   Track? _npTrack;
   int _npStartedEpoch = 0;
@@ -63,6 +68,7 @@ class PlaybackController extends ChangeNotifier {
     _playedMs = 0;
     _playSince = _playing ? DateTime.now() : null;
     onNowPlaying?.call(t);
+    onTrackStartedSignal?.call(t);
   }
 
   /// Правило скроббла Last.fm: трек короче 30 сек не считается; иначе нужно
@@ -85,6 +91,7 @@ class PlaybackController extends ChangeNotifier {
     if (shouldScrobble(durationMs: dur, playedMs: _playedMs)) {
       onScrobble?.call(t, _npStartedEpoch);
     }
+    onTrackEnded?.call(t, _playedMs, dur); // recs v2: сигнал скипа/дослушивания
     _npTrack = null;
     _playedMs = 0;
   }

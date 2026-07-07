@@ -330,6 +330,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   Widget _tools(BuildContext context, WidgetRef ref, Track track) {
     final accent = Theme.of(context).colorScheme.primary;
     final liked = ref.watch(libraryProvider).isLiked(track);
+    final disliked = ref.watch(recsStoreProvider).isDisliked(track);
     final downloads = ref.watch(downloadsProvider);
     final downloaded = downloads.isDownloaded(track.uid);
     final downloading = downloads.isDownloading(track.uid);
@@ -388,6 +389,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
                 color: liked ? accent : AppColors.white60),
             onPressed: () => ref.read(libraryProvider).toggleLike(track)),
+        IconButton(
+            tooltip: 'Не нравится',
+            icon: Icon(
+                disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
+                color: disliked ? AppColors.warning : AppColors.white60),
+            onPressed: () async {
+              final wasDisliked = disliked;
+              await ref.read(recsStoreProvider).toggleDislike(track);
+              // Свежий дизлайк текущего трека — сразу проматываем дальше.
+              if (!wasDisliked &&
+                  ref.read(playbackProvider).current?.uid == track.uid) {
+                ref.read(playbackProvider).next();
+              }
+            }),
       ],
     );
   }

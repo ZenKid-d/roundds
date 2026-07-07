@@ -36,6 +36,7 @@ Future<void> showTrackMenu(
             title: const Text('Играть следующим'),
             onTap: () {
               ref.read(playbackProvider).playNext(track);
+              ref.read(recsStoreProvider).recordRepeat(track);
               Navigator.pop(sheetCtx);
               _snack(context, 'Играет следующим');
             },
@@ -45,6 +46,7 @@ Future<void> showTrackMenu(
             title: const Text('Добавить в очередь'),
             onTap: () {
               ref.read(playbackProvider).addToQueue(track);
+              ref.read(recsStoreProvider).recordRepeat(track);
               Navigator.pop(sheetCtx);
               _snack(context, 'Добавлено в очередь');
             },
@@ -92,6 +94,24 @@ Future<void> showTrackMenu(
               title: Text(liked ? 'Убрать из избранного' : 'В избранное'),
               onTap: () {
                 r.read(libraryProvider).toggleLike(track);
+                Navigator.pop(sheetCtx);
+              },
+            );
+          }),
+          Consumer(builder: (_, r, __) {
+            final disliked = r.watch(recsStoreProvider).isDisliked(track);
+            return ListTile(
+              leading: Icon(
+                  disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
+                  color: disliked ? AppColors.warning : null),
+              title: Text(disliked ? 'Убрать дизлайк' : 'Не нравится'),
+              subtitle: disliked
+                  ? null
+                  : Text('Больше не показывать в рекомендациях',
+                      style:
+                          TextStyle(color: AppColors.white45, fontSize: 11)),
+              onTap: () {
+                r.read(recsStoreProvider).toggleDislike(track);
                 Navigator.pop(sheetCtx);
               },
             );

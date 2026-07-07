@@ -13,6 +13,7 @@ import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
+import '../data/recs/recs_store.dart';
 import '../data/spotify_import.dart';
 import '../data/translation_service.dart';
 import 'theme/theme_settings.dart';
@@ -96,12 +97,20 @@ final lastfmServiceProvider = Provider<LastfmService>(
 final spotifyImportProvider = Provider<SpotifyImportService>(
     (ref) => SpotifyImportService(ref.read(dioProvider)));
 
+/// Переопределяется в main() после асинхронного открытия БД recs.
+final recsStoreProvider = ChangeNotifierProvider<RecsStore>(
+    (ref) => throw UnimplementedError('recsStore override missing'));
+
 final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
   final pc = PlaybackController(ref.read(audioHandlerProvider));
   pc.onListened = (ms) => ref.read(libraryProvider).addListened(ms);
   final lastfm = ref.read(lastfmServiceProvider);
   pc.onNowPlaying = lastfm.updateNowPlaying;
   pc.onScrobble = lastfm.scrobble;
+  // Recs v2: event log из плеера.
+  final recs = ref.read(recsStoreProvider);
+  pc.onTrackStartedSignal = recs.recordStart;
+  pc.onTrackEnded = recs.recordPlayback;
   return pc;
 });
 
@@ -114,6 +123,7 @@ final libraryProvider = ChangeNotifierProvider<LibraryController>((ref) {
   final c = LibraryController(ref.read(prefsProvider));
   // Авто-скачивание лайкнутого трека, если включено в настройках.
   c.onTrackLiked = (track) {
+    ref.read(recsStoreProvider).recordLike(track); // recs v2: сигнал лайка
     if (ref.read(prefsProvider).getBool('autodl_likes') ?? false) {
       ref.read(downloadsProvider).download(track);
     }

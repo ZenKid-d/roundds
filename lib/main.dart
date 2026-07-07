@@ -12,6 +12,8 @@ import 'core/providers.dart';
 import 'core/update_service.dart';
 import 'data/aggregator.dart';
 import 'data/recommendation_service.dart';
+import 'data/recs/recs_db.dart';
+import 'data/recs/recs_store.dart';
 import 'data/sources/soundcloud_source.dart';
 import 'data/sources/yandex_source.dart';
 import 'data/sources/youtube_music_source.dart';
@@ -48,6 +50,18 @@ Future<void> main() async {
 
   final downloads = DownloadsController(prefs, dio, aggregator);
   final reco = RecommendationService(youtube, soundcloud, yandex, aggregator);
+
+  // Recs v2: event log / дизлайки (SQLite). Открываем БД, загружаем дизлайки,
+  // один раз импортируем существующие сигналы (лайки/статы) из prefs.
+  final recsStore = RecsStore(await RecsDb.open());
+  await recsStore.init();
+  if (!(prefs.getBool('recs_imported') ?? false)) {
+    await recsStore.importFromLibrary(
+      liked: _tracksFromPrefs(prefs.getString('liked')),
+      topTracks: _statsFromPrefs(prefs.getString('stats')),
+    );
+    await prefs.setBool('recs_imported', true);
+  }
 
   // Фоновое воспроизведение + уведомление + управление с локскрина.
   final handler = await AudioService.init(
@@ -109,8 +123,35 @@ Future<void> main() async {
         audioHandlerProvider.overrideWithValue(handler),
         downloadsProvider.overrideWith((ref) => downloads),
         recommendationServiceProvider.overrideWithValue(reco),
+        recsStoreProvider.overrideWith((ref) => recsStore),
       ],
       child: const RoundedsApp(),
     ),
   );
+}
+
+/// Парсит список треков из prefs-ключа 'liked' (для одноразового импорта recs).
+List<Track> _tracksFromPrefs(String? raw) {
+  if (raw == null) return const [];
+  try {
+    return (jsonDecode(raw) as List)
+        .map((e) => Track.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// Парсит статы из prefs-ключа 'stats' — список {track, count}.
+List<MapEntry<Track, int>> _statsFromPrefs(String? raw) {
+  if (raw == null) return const [];
+  try {
+    return (jsonDecode(raw) as List).map((e) {
+      final m = (e as Map).cast<String, dynamic>();
+      final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
+      return MapEntry(t, (m['count'] as num?)?.toInt() ?? 0);
+    }).toList();
+  } catch (_) {
+    return const [];
+  }
 }

@@ -17,6 +17,7 @@ import '../../domain/models/source_type.dart';
 import '../stats/stats_screen.dart';
 import 'appearance_screen.dart';
 import 'blacklist_screen.dart';
+import 'dislikes_screen.dart';
 import 'diagnostics_screen.dart';
 import 'storage_screen.dart';
 
@@ -212,6 +213,16 @@ class SettingsScreen extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const BlacklistScreen())),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.thumb_down_outlined),
+          title: const Text('Дизлайки'),
+          subtitle: Text('Треки, исключённые из рекомендаций',
+              style: TextStyle(color: AppColors.white45, fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DislikesScreen())),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
