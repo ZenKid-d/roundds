@@ -105,6 +105,13 @@ class RoundsAudioHandler extends BaseAudioHandler {
   static const int _maxAutoSkipOnError = 3;
   int _errorSkipStreak = 0;
 
+  // Токен поколения загрузки: при быстром переключении треков старый вызов
+  // _load()/_loadGapless() ещё может висеть в await, когда новый уже стартовал
+  // и оборвал соединение старого (setAudioSource на новом источнике рвёт
+  // старый запрос). Без токена оборванный старый вызов ловит "Connection has
+  // aborted" как настоящую ошибку и может увести _index через auto-skip.
+  int _loadGen = 0;
+
   // «Продолжить с места»: очередь+индекс+позицию храним в prefs, восстанавливаем
   // на старте (на паузе). Позицию сохраняем периодически, пока играет.
   SharedPreferences? _sessionPrefs;
@@ -159,6 +166,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   Future<void> _loadPaused(Duration at) async {
     final track = current;
     if (track == null) return;
+    final gen = ++_loadGen;
     _loading = true;
     _notify();
     mediaItem.add(_toMediaItem(track));
@@ -169,15 +177,19 @@ class RoundsAudioHandler extends BaseAudioHandler {
         src = AudioSource.uri(Uri.file(local));
       } else {
         final stream = await _aggregator.resolveStreamWithFallback(track);
+        if (gen != _loadGen) return; // обогнали ручным тапом по треку
         src = AudioSource.uri(stream.uri, headers: stream.headers);
       }
+      if (gen != _loadGen) return;
       // initialPosition — стартовая позиция без play(): трек ждёт на паузе.
       await _player.setAudioSource(src, initialPosition: at);
     } catch (_) {
       // Не смогли восстановить поток — трек остаётся в очереди, сыграет по тапу.
     } finally {
-      _loading = false;
-      _notify();
+      if (gen == _loadGen) {
+        _loading = false;
+        _notify();
+      }
     }
   }
 
@@ -296,6 +308,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
       await _loadGapless(track, autoSkipOnError: autoSkipOnError);
       return;
     }
+    final gen = ++_loadGen;
     _loading = true;
     _error = null;
     _notify();
@@ -305,12 +318,14 @@ class RoundsAudioHandler extends BaseAudioHandler {
     // (истёкшая/битая ссылка, временный сбой источника).
     Object? lastErr;
     for (var attempt = 0; attempt < 2; attempt++) {
+      if (gen != _loadGen) return; // нас обогнал более новый _load()
       try {
         if (attempt > 0) {
           // Сброс возможно-залипшего состояния плеера после сбоя соединения.
           try {
             await _player.stop();
           } catch (_) {}
+          if (gen != _loadGen) return;
         }
         final local = localFileResolver?.call(track.uid);
         if (local != null) {
@@ -325,12 +340,14 @@ class RoundsAudioHandler extends BaseAudioHandler {
           } else {
             stream = await _aggregator.resolveStreamWithFallback(track);
           }
+          if (gen != _loadGen) return;
           _preUid = null;
           _preStream = null;
           await _player.setAudioSource(
             AudioSource.uri(stream.uri, headers: stream.headers),
           );
         }
+        if (gen != _loadGen) return;
         _player.play();
         _error = null;
         lastErr = null;
@@ -340,12 +357,15 @@ class RoundsAudioHandler extends BaseAudioHandler {
         unawaited(_maybeExtendRadio());
         break;
       } catch (e) {
+        if (gen != _loadGen) return; // обрыв — это отмена старого источника, не ошибка
         lastErr = e;
         if (attempt == 0) {
           await Future.delayed(const Duration(milliseconds: 500));
+          if (gen != _loadGen) return;
         }
       }
     }
+    if (gen != _loadGen) return;
     if (lastErr != null) {
       if (await _maybeAutoSkip(autoSkip: autoSkipOnError)) return;
       _error = _errorSkipStreak >= _maxAutoSkipOnError
@@ -476,6 +496,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   Future<void> _loadGapless(Track track, {bool autoSkipOnError = true}) async {
+    final gen = ++_loadGen;
     _loading = true;
     _error = null;
     _notify();
@@ -485,6 +506,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     // чтобы не залипнуть с ошибкой (иначе приходилось перезапускать приложение).
     Object? lastErr;
     for (var attempt = 0; attempt < 2; attempt++) {
+      if (gen != _loadGen) return; // нас обогнал более новый _load()
       try {
         if (attempt > 0) {
           _preUid = null;
@@ -493,12 +515,15 @@ class RoundsAudioHandler extends BaseAudioHandler {
           try {
             await _player.stop();
           } catch (_) {}
+          if (gen != _loadGen) return;
         }
         final src = await _sourceForTrack(track);
+        if (gen != _loadGen) return;
         final concat = ConcatenatingAudioSource(children: [src]);
         _concat = concat;
         _gaplessNext = null;
         await _player.setAudioSource(concat);
+        if (gen != _loadGen) return;
         _player.play();
         _error = null;
         lastErr = null;
@@ -508,12 +533,15 @@ class RoundsAudioHandler extends BaseAudioHandler {
         unawaited(_appendNextGapless());
         break;
       } catch (e) {
+        if (gen != _loadGen) return; // обрыв — это отмена старого источника, не ошибка
         lastErr = e;
         if (attempt == 0) {
           await Future.delayed(const Duration(milliseconds: 500));
+          if (gen != _loadGen) return;
         }
       }
     }
+    if (gen != _loadGen) return;
     if (lastErr != null) {
       if (await _maybeAutoSkip(autoSkip: autoSkipOnError)) return;
       _error = _errorSkipStreak >= _maxAutoSkipOnError
