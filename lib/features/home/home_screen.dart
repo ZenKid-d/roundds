@@ -28,6 +28,15 @@ final recommendationsProvider = FutureProvider<List<RecoRow>>((ref) async {
   return ref.read(waveEngineProvider).buildHomeRows();
 });
 
+/// Дневные плейлисты («Плейлист дня», «Дежавю») — генерятся раз в сутки,
+/// кэшируются в БД с датой.
+final dailyPlaylistsProvider = FutureProvider<List<RecoRow>>((ref) async {
+  ref.watch(settingsProvider);
+  final lib = ref.read(libraryProvider);
+  if (lib.history.isEmpty && lib.liked.isEmpty) return const [];
+  return ref.read(waveEngineProvider).dailyPlaylists();
+});
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -37,6 +46,14 @@ class HomeScreen extends ConsumerWidget {
     final history = lib.history;
     final feed = ref.watch(feedProvider);
     final recos = (ref.watch(recommendationsProvider).value ?? const <RecoRow>[])
+        .map((r) => RecoRow(
+            r.title,
+            r.tracks
+                .where((t) => !lib.isArtistBlacklisted(t.artist))
+                .toList()))
+        .where((r) => r.tracks.isNotEmpty)
+        .toList();
+    final daily = (ref.watch(dailyPlaylistsProvider).value ?? const <RecoRow>[])
         .map((r) => RecoRow(
             r.title,
             r.tracks
@@ -95,6 +112,10 @@ class HomeScreen extends ConsumerWidget {
           if (history.isNotEmpty) ...[
             const _SectionHeader('Продолжить слушать'),
             SliverToBoxAdapter(child: _trackHRow(ref, context, history)),
+          ],
+          for (final row in daily) ...[
+            _SectionHeader(row.title),
+            SliverToBoxAdapter(child: _trackHRow(ref, context, row.tracks)),
           ],
           for (final row in recos) ...[
             _SectionHeader(row.title),

@@ -297,6 +297,91 @@ class WaveEngine {
     return rows;
   }
 
+  // --- дневные плейлисты (кэш на сутки) ---
+
+  /// «Плейлист дня» (~65% любимого + ~35% открытий) и «Дежавю» (незнакомые
+  /// артисты из 2-hop графа). Генерируются раз в сутки, кэшируются с датой.
+  /// Премьера (свежие релизы) — отдельная под-фаза 5b.
+  Future<List<RecoRow>> dailyPlaylists({int size = 30}) async {
+    final day = _todayKey();
+    final cachedMix = await _store.dailyGet('mix', day);
+    final cachedDejavu = await _store.dailyGet('dejavu', day);
+    if (cachedMix != null && cachedDejavu != null) {
+      return [
+        if (cachedMix.isNotEmpty) RecoRow('Плейлист дня', cachedMix),
+        if (cachedDejavu.isNotEmpty) RecoRow('Дежавю', cachedDejavu),
+      ];
+    }
+
+    final profile = await _store.buildProfile();
+    final favs = _favorites();
+    final cooldown = await _store.cooldownMap();
+    final disliked = _store.dislikedKeys;
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    final pool = await _gather(
+      favs.take(6).toList(),
+      seedArtists: profile.topArtists(limit: 8),
+      seedTags: profile.topTags(limit: 4),
+    );
+
+    // «Плейлист дня»: ~65% знакомого любимого + ~35% открытий (exploration 0.35).
+    final mix = rankWave(
+      pool,
+      profile: profile,
+      cooldown: cooldown,
+      dislikedKeys: disliked,
+      weights: const ScoreWeights(
+          wSim: 1.2, wNov: 0.4, wRep: 0.7, explorationShare: 0.35),
+      constraints: WaveConstraints.balanced,
+      recentArtists: const [],
+      servedKeys: const {},
+      nowSec: nowSec,
+      limit: size,
+    );
+    await _store.dailyPut('mix', day, mix);
+
+    // «Дежавю»: 2-hop — незнакомые артисты (ноль прослушиваний) из графа похожести.
+    final firstHopUnknown = pool
+        .where((c) => !profile.isKnownArtist(c.artistKey))
+        .map((c) => c.track)
+        .take(6)
+        .toList();
+    final dejavu = <Track>[];
+    if (firstHopUnknown.isNotEmpty) {
+      final pool2 = await _gather(firstHopUnknown);
+      final unknown2 =
+          pool2.where((c) => !profile.isKnownArtist(c.artistKey)).toList();
+      dejavu.addAll(rankWave(
+        unknown2,
+        profile: profile,
+        cooldown: cooldown,
+        dislikedKeys: disliked,
+        weights: ScoreWeights.unfamiliar,
+        constraints: WaveConstraints.balanced,
+        recentArtists: const [],
+        servedKeys: {
+          for (final t in mix) RecsDedup.normKey(t.artist, t.title)
+        },
+        nowSec: nowSec,
+        limit: size,
+      ));
+    }
+    await _store.dailyPut('dejavu', day, dejavu);
+
+    return [
+      if (mix.isNotEmpty) RecoRow('Плейлист дня', mix),
+      if (dejavu.isNotEmpty) RecoRow('Дежавю', dejavu),
+    ];
+  }
+
+  String _todayKey() {
+    final d = DateTime.now();
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$m-$day';
+  }
+
   // --- чистый ранкер (тестируемо) ---
 
   /// Фильтрует (дизлайки/выданное), скорит, гарантирует долю exploration и

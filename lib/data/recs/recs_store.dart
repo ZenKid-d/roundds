@@ -264,4 +264,36 @@ class RecsStore extends ChangeNotifier {
       );
     } catch (_) {}
   }
+
+  // --- дневные плейлисты (кэш с датой) ---
+
+  /// Читает дневной плейлист [kind] за день [day] (`YYYY-MM-DD`); null — нет.
+  Future<List<Track>?> dailyGet(String kind, String day) async {
+    try {
+      final rows = await _sql.query('daily_cache',
+          where: 'kind = ? AND day = ?', whereArgs: [kind, day], limit: 1);
+      if (rows.isEmpty) return null;
+      final list = jsonDecode(rows.first['payload'] as String) as List;
+      return [
+        for (final e in list)
+          Track.fromJson((e as Map).cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> dailyPut(String kind, String day, List<Track> tracks) async {
+    try {
+      await _sql.insert(
+        'daily_cache',
+        {
+          'kind': kind,
+          'day': day,
+          'payload': jsonEncode([for (final t in tracks) t.toJson()]),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
 }
