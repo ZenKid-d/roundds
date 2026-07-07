@@ -8,6 +8,7 @@ import '../../core/widgets/mini_player.dart';
 import '../drawer/app_drawer.dart';
 import '../home/home_screen.dart';
 import '../library/library_screen.dart';
+import '../onboarding/onboarding_screen.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -38,10 +39,28 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void initState() {
     super.initState();
-    // Тихая авто-проверка обновлений после первого кадра.
+    // Тихая авто-проверка обновлений + онбординг после первого кадра.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) checkForUpdate(context, ref, silent: true);
+      if (!mounted) return;
+      checkForUpdate(context, ref, silent: true);
+      _maybeOnboard();
     });
+  }
+
+  /// Первый запуск с пустой библиотекой → показываем онбординг. Если лайки уже
+  /// есть (напр. импорт YTM) — сидов достаточно, онбординг не нужен.
+  void _maybeOnboard() {
+    final prefs = ref.read(prefsProvider);
+    if (prefs.getBool('onboarded') ?? false) return;
+    final lib = ref.read(libraryProvider);
+    if (lib.liked.isNotEmpty || lib.history.isNotEmpty) {
+      prefs.setBool('onboarded', true);
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const OnboardingScreen(),
+    ));
   }
 
   void _select(AppSection s) {
