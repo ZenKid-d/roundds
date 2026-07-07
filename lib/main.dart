@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/downloads_controller.dart';
+import 'core/premium/premium_controller.dart';
 import 'core/providers.dart';
 import 'core/update_service.dart';
 import 'data/aggregator.dart';
@@ -37,8 +39,14 @@ Future<void> main() async {
     enabled: prefs.getBool('rf_bypass') ?? false,
     instances: prefs.getStringList('rf_instances') ?? const [],
   );
-  youtube.streamQuality = prefs.getInt('stream_quality') ??
+  // Premium (Boosty-коды): грузим до старта, чтобы сразу клампить качество.
+  final premium = PremiumController(const FlutterSecureStorage());
+  await premium.load();
+  // Качество: бесплатным — максимум «Среднее» (индекс 1), Premium — как выбрано.
+  final savedQuality = prefs.getInt('stream_quality') ??
       ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
+  youtube.streamQuality =
+      premium.isPremium ? savedQuality : (savedQuality > 1 ? 1 : savedQuality);
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);
@@ -123,6 +131,7 @@ Future<void> main() async {
         aggregatorProvider.overrideWithValue(aggregator),
         audioHandlerProvider.overrideWithValue(handler),
         downloadsProvider.overrideWith((ref) => downloads),
+        premiumProvider.overrideWith((ref) => premium),
         recommendationServiceProvider.overrideWithValue(reco),
         recsStoreProvider.overrideWith((ref) => recsStore),
       ],

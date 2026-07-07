@@ -33,6 +33,10 @@ dependencies:
   crypto: ^3.0.3
   html: ^0.15.4
 
+  # Premium: подписанные коды доступа (Ed25519, оффлайн-проверка) + Boosty
+  cryptography: ^2.7.0
+  url_launcher: ^6.3.0
+
   # Images
   cached_network_image: ^3.3.1
   flutter_cache_manager: ^3.4.1

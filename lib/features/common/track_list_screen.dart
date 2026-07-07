@@ -8,6 +8,7 @@ import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/track_download_status.dart';
 import '../../domain/models/track.dart';
+import '../premium/premium_gate.dart';
 
 /// Универсальный экран со списком треков: статический список или загрузчик.
 /// Кнопки «Слушать всё» и «Радио», мини-плеер внизу.
@@ -69,9 +70,14 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
               tooltip: 'Скачать все треки',
               onPressed: downloads.playlistBusy
                   ? null
-                  : () => ref
-                      .read(downloadsProvider)
-                      .downloadPlaylist(widget.title, tracks),
+                  : () async {
+                      if (await ensurePremium(context, ref,
+                          feature: 'Скачивание')) {
+                        ref
+                            .read(downloadsProvider)
+                            .downloadPlaylist(widget.title, tracks);
+                      }
+                    },
             ),
         ],
         bottom: downloads.playlistBusy

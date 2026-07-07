@@ -16,6 +16,7 @@ import '../../playback/audio_handler.dart';
 import '../album/album_screen.dart';
 import '../artist/artist_screen.dart';
 import '../common/track_list_screen.dart';
+import '../premium/premium_gate.dart';
 import 'equalizer_screen.dart';
 import 'lyrics_screen.dart';
 
@@ -375,11 +376,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         ? Icons.download_done
                         : Icons.download_outlined,
                     color: downloaded ? accent : AppColors.white60),
-            onPressed: () {
+            onPressed: () async {
               if (downloaded) {
                 ref.read(downloadsProvider).remove(track.uid);
               } else if (!downloading) {
-                ref.read(downloadsProvider).download(track);
+                if (await ensurePremium(context, ref, feature: 'Скачивание')) {
+                  ref.read(downloadsProvider).download(track);
+                }
               }
             }),
         IconButton(

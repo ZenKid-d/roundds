@@ -49,3 +49,8 @@ key.properties
 android/key.properties
 *.jks
 *.keystore
+
+# Premium — приватный ключ подписи кодов (Ed25519 seed). НЕ коммитить.
+premium_private*.txt
+*.premium.key
+.env

@@ -5,6 +5,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
+import '../premium/premium_gate.dart';
 import '../shell/home_shell.dart';
 
 class AppDrawer extends ConsumerWidget {
@@ -70,6 +71,7 @@ class AppDrawer extends ConsumerWidget {
                   active: current == AppSection.settings,
                   accent: accent,
                   onTap: () => onSelect(AppSection.settings)),
+              const _PremiumNavItem(),
               const SizedBox(height: 22),
               Padding(
                 padding: const EdgeInsets.only(left: 12, bottom: 8),
@@ -82,6 +84,51 @@ class AppDrawer extends ConsumerWidget {
               for (final s in SourceType.values)
                 _ServiceRow(source: s, enabled: settings.isEnabled(s)),
               const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Пункт «Premium» с золотым акцентом и меткой активной подписки.
+class _PremiumNavItem extends ConsumerWidget {
+  const _PremiumNavItem();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(premiumProvider).isPremium;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.of(context).pop(); // закрыть Drawer
+          openPremiumScreen(context);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.workspace_premium,
+                  size: 20, color: kPremiumGold),
+              const SizedBox(width: 13),
+              const Text('Premium',
+                  style: TextStyle(fontSize: 14, color: Colors.white)),
+              const Spacer(),
+              if (active)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: kPremiumGold.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text('активен',
+                      style: TextStyle(fontSize: 10, color: kPremiumGold)),
+                ),
             ],
           ),
         ),

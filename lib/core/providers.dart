@@ -8,7 +8,10 @@ import '../data/sources/soundcloud_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../domain/models/track.dart';
 import 'diagnostics.dart';
+import 'premium/premium_controller.dart';
+import 'premium/wave_quota.dart';
 import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
@@ -113,12 +116,23 @@ final ChangeNotifierProvider<PlaybackController> playbackProvider =
   final recs = ref.read(recsStoreProvider);
   final engine = ref.read(waveEngineProvider);
   final handler = ref.read(audioHandlerProvider);
-  handler.radioExtender = engine.extend; // волна докручивает очередь (было reco)
+  final premium = ref.read(premiumProvider);
+  final quota = ref.read(waveQuotaProvider);
+  // Бесплатным волна докручивается только пока не исчерпан дневной лимит.
+  bool waveAllowed() => premium.isPremium || quota.freeHasQuota;
+  handler.radioExtender = (seed) async {
+    if (!waveAllowed()) return const <Track>[];
+    return engine.extend(seed);
+  };
   pc.onTrackStartedSignal = recs.recordStart;
   pc.onTrackEnded = (track, playedMs, durMs) {
     recs.recordPlayback(track, playedMs, durMs);
+    // Трек волны, реально прослушанный (≥30с), тратит дневной лимит бесплатных.
+    if (pc.isRadio && !premium.isPremium && playedMs >= 30000) {
+      quota.noteWavePlay();
+    }
     // Скип меняет направление сессии и хвост очереди — только пока играет волна.
-    if (engine.noteEnded(track, playedMs, durMs) && pc.isRadio) {
+    if (engine.noteEnded(track, playedMs, durMs) && pc.isRadio && waveAllowed()) {
       final cur = pc.current;
       if (cur != null) {
         engine.extend(cur).then((tail) {
@@ -142,7 +156,9 @@ final ChangeNotifierProvider<LibraryController> libraryProvider =
   c.onTrackLiked = (track) {
     ref.read(recsStoreProvider).recordLike(track); // recs v2: сигнал лайка
     ref.read(waveEngineProvider).noteLike(track); // волна: усилить направление
-    if (ref.read(prefsProvider).getBool('autodl_likes') ?? false) {
+    // Авто-скачивание — Premium-функция.
+    if ((ref.read(prefsProvider).getBool('autodl_likes') ?? false) &&
+        ref.read(premiumProvider).isPremium) {
       ref.read(downloadsProvider).download(track);
     }
   };
@@ -181,6 +197,15 @@ final googleYtImportProvider =
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(
     (ref) => throw UnimplementedError('downloads override missing'));
+
+/// Premium-статус (подписанные Boosty-коды). Переопределяется в main()
+/// уже загруженным экземпляром — чтобы качество клампилось на старте.
+final premiumProvider = ChangeNotifierProvider<PremiumController>(
+    (ref) => throw UnimplementedError('premium override missing'));
+
+/// Дневной лимит «Моей волны» для бесплатной версии.
+final waveQuotaProvider =
+    Provider<WaveQuota>((ref) => WaveQuota(ref.read(prefsProvider)));
 
 /// Готовность каждого источника (для статусов в Drawer/Settings).
 final sourceReadyProvider =

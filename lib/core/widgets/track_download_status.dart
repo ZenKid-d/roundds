@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../theme/app_colors.dart';
 import '../../domain/models/track.dart';
+import '../../features/premium/premium_gate.dart';
 
 /// Индикатор состояния скачивания трека для строки списка: кружок-прогресс во
 /// время загрузки, отметка «готово» для скачанного и кнопка «скачать» для
@@ -52,7 +53,11 @@ class TrackDownloadStatus extends ConsumerWidget {
     return IconButton(
       icon: Icon(Icons.download_outlined, color: AppColors.white45),
       tooltip: 'Скачать трек',
-      onPressed: () => ref.read(downloadsProvider).download(track),
+      onPressed: () async {
+        if (await ensurePremium(context, ref, feature: 'Скачивание')) {
+          ref.read(downloadsProvider).download(track);
+        }
+      },
     );
   }
 }

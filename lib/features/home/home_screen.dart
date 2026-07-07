@@ -13,6 +13,7 @@ import '../../data/recs/wave_mood.dart';
 import '../../domain/models/track.dart';
 import '../artist/followed_artists_screen.dart';
 import '../charts/charts_screen.dart';
+import '../premium/premium_gate.dart';
 
 /// Лента главного экрана — микс из всех включённых источников.
 final feedProvider = FutureProvider<List<Track>>((ref) async {
@@ -240,6 +241,13 @@ class _GenreChips extends StatelessWidget {
 /// «Моя волна» — живой поток из движка рекомендаций (профиль + кандидаты +
 /// скоринг + anti-repetition). Real-time адаптируется на скип/лайк.
 Future<void> _startWave(WidgetRef ref, BuildContext context) async {
+  // Бесплатно — не больше N треков волны в день. Лимит исчерпан → Premium.
+  final premium = ref.read(premiumProvider);
+  final quota = ref.read(waveQuotaProvider);
+  if (!premium.isPremium && !quota.freeHasQuota) {
+    await showPremiumRequired(context, feature: '«Моя волна» без лимита');
+    return;
+  }
   final messenger = ScaffoldMessenger.of(context);
   messenger.showSnackBar(const SnackBar(
       content: Text('Собираю волну…'), duration: Duration(seconds: 1)));

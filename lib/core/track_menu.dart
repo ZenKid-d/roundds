@@ -8,6 +8,7 @@ import 'theme/app_colors.dart';
 import 'widgets/artwork.dart';
 import '../domain/models/track.dart';
 import '../features/album/album_screen.dart';
+import '../features/premium/premium_gate.dart';
 
 /// Контекстное меню трека (по долгому тапу): играть следующим / в очередь /
 /// радио / скачать / в плейлист / избранное.
@@ -71,10 +72,13 @@ Future<void> showTrackMenu(
               leading: Icon(done ? Icons.download_done : Icons.download),
               title: Text(done ? 'Уже скачано' : 'Скачать'),
               enabled: !done,
-              onTap: () {
-                r.read(downloadsProvider).download(track);
+              onTap: () async {
                 Navigator.pop(sheetCtx);
-                _snack(context, 'Скачивание…');
+                if (!context.mounted) return;
+                if (await ensurePremium(context, r, feature: 'Скачивание')) {
+                  r.read(downloadsProvider).download(track);
+                  if (context.mounted) _snack(context, 'Скачивание…');
+                }
               },
             );
           }),

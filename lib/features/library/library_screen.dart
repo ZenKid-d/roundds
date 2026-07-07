@@ -18,6 +18,7 @@ import '../../core/widgets/track_download_status.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/track.dart';
 import '../common/track_list_screen.dart';
+import '../premium/premium_gate.dart';
 
 /// Строка фильтра медиатеки (по названию/артисту), в нижнем регистре.
 final _libQueryProvider = StateProvider<String>((ref) => '');
@@ -93,10 +94,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 IconButton(
                   icon: const Icon(Icons.download),
                   tooltip: 'Скачать все лайки',
-                  onPressed: () {
+                  onPressed: () async {
                     final liked = ref.read(libraryProvider).liked;
                     if (liked.isNotEmpty &&
                         !ref.read(downloadsProvider).playlistBusy) {
+                      if (!await ensurePremium(context, ref,
+                          feature: 'Скачивание')) {
+                        return;
+                      }
+                      if (!mounted) return;
                       ref
                           .read(downloadsProvider)
                           .downloadPlaylist('Избранное', liked);
@@ -903,9 +909,14 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
             tooltip: 'Скачать плейлист',
             onPressed: (pl.tracks.isEmpty || downloads.playlistBusy)
                 ? null
-                : () => ref
-                    .read(downloadsProvider)
-                    .downloadPlaylist(pl.name, pl.tracks),
+                : () async {
+                    if (await ensurePremium(context, ref,
+                        feature: 'Скачивание')) {
+                      ref
+                          .read(downloadsProvider)
+                          .downloadPlaylist(pl.name, pl.tracks);
+                    }
+                  },
           ),
         ],
         bottom: downloads.playlistBusy

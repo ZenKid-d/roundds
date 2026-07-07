@@ -14,6 +14,7 @@ import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
+import '../premium/premium_gate.dart';
 import '../stats/stats_screen.dart';
 import 'appearance_screen.dart';
 import 'blacklist_screen.dart';
@@ -43,6 +44,22 @@ class SettingsScreen extends ConsumerWidget {
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AppearanceScreen())),
         ),
+        Consumer(builder: (context, ref, _) {
+          final premium = ref.watch(premiumProvider);
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.workspace_premium, color: kPremiumGold),
+            title: const Text('Premium'),
+            subtitle: Text(
+              premium.isPremium
+                  ? 'Активен до ${fmtPremiumDate(premium.expiry!)}'
+                  : 'Скачивание, качество, безлимитная волна · Boosty',
+              style: TextStyle(color: AppColors.white45, fontSize: 11),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => openPremiumScreen(context),
+          );
+        }),
         const SizedBox(height: 8),
         const _Header('Доступ в России (без VPN)'),
         const _RfBypass(),
@@ -818,8 +835,11 @@ class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
   @override
   Widget build(BuildContext context) {
     final prefs = ref.read(prefsProvider);
-    final q = prefs.getInt('stream_quality') ??
+    final premium = ref.watch(premiumProvider);
+    var q = prefs.getInt('stream_quality') ??
         ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
+    // Бесплатным «Высокое» недоступно — показываем как «Среднее».
+    if (!premium.isPremium && q > 1) q = 1;
     const labels = ['Низкое', 'Среднее', 'Высокое'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,9 +857,17 @@ class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
+                  avatar: (i == 2 && !premium.isPremium)
+                      ? const Icon(Icons.lock, size: 14, color: kPremiumGold)
+                      : null,
                   label: Text(labels[i]),
                   selected: q == i,
-                  onSelected: (_) {
+                  onSelected: (_) async {
+                    if (i == 2 && !premium.isPremium) {
+                      await showPremiumRequired(context,
+                          feature: 'Максимальное качество');
+                      return;
+                    }
                     prefs.setInt('stream_quality', i);
                     ref.read(youtubeSourceProvider).streamQuality = i;
                     setState(() {});
