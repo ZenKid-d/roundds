@@ -73,4 +73,27 @@ void main() {
       );
     });
   });
+
+  group('RecsDedup.resolvesTo (проверка верности резолва)', () {
+    test('точное совпадение (ремастер вырезан)', () {
+      expect(
+          RecsDedup.resolvesTo('Radiohead', 'Karma Police', 'Radiohead',
+              'Karma Police (Remastered)'),
+          isTrue);
+    });
+    test('feat в резолве не мешает', () {
+      expect(
+          RecsDedup.resolvesTo('Drake', 'Money In The Grave', 'Drake, Rick Ross',
+              'Money In The Grave'),
+          isTrue);
+    });
+    test('чужой артист (кавер) — не тот трек', () {
+      expect(RecsDedup.resolvesTo('Bon Iver', 'Skinny Love', 'Birdy', 'Skinny Love'),
+          isFalse);
+    });
+    test('другое название — не тот трек', () {
+      expect(RecsDedup.resolvesTo('Radiohead', 'Karma Police', 'Radiohead', 'Creep'),
+          isFalse);
+    });
+  });
 }

@@ -120,4 +120,30 @@ class RecsDedup {
     );
     return titleSim >= threshold;
   }
+
+  /// Верен ли резолв: найденный [gotArtist]/[gotTitle] — действительно тот трек,
+  /// что искали ([candArtist]/[candTitle]). Название строго (fuzzy ≥ 0.8),
+  /// артист мягко (вхождение с учётом feat./перестановок или заметное
+  /// пересечение токенов). Отсекает каверы/караоке/ускоренные/чужие треки при
+  /// резолве кандидатов поиском.
+  static bool resolvesTo(
+    String candArtist,
+    String candTitle,
+    String gotArtist,
+    String gotTitle,
+  ) {
+    if (normKey(candArtist, candTitle) == normKey(gotArtist, gotTitle)) {
+      return true;
+    }
+    final titleSim = math.max(
+      tokenSimilarity(candTitle, gotTitle),
+      levenshteinRatio(candTitle, gotTitle),
+    );
+    if (titleSim < 0.8) return false;
+    final a1 = normalize(candArtist);
+    final a2 = normalize(gotArtist);
+    if (a1.isEmpty || a2.isEmpty) return false;
+    if (a2.contains(a1) || a1.contains(a2)) return true;
+    return tokenSimilarity(candArtist, gotArtist) >= 0.34;
+  }
 }

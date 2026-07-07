@@ -186,4 +186,29 @@ void main() {
       expect(out.first.artist, 'Hit');
     });
   });
+
+  group('WaveEngine.looksLikeJunk (фильтр мусора)', () {
+    Track tr(String artist, String title) => Track(
+        id: '$artist::$title',
+        title: title,
+        artist: artist,
+        source: SourceType.youtube);
+    test('караоке — мусор', () {
+      expect(
+          WaveEngine.looksLikeJunk(
+              tr('Sing Along', 'Bohemian Rhapsody (Karaoke Version)')),
+          isTrue);
+    });
+    test('nightcore-канал — мусор',
+        () => expect(WaveEngine.looksLikeJunk(tr('Nightcore World', 'Faded')),
+            isTrue));
+    test('8D Audio — мусор',
+        () => expect(
+            WaveEngine.looksLikeJunk(tr('X', 'Blinding Lights (8D Audio)')),
+            isTrue));
+    test('обычный трек — не мусор',
+        () => expect(
+            WaveEngine.looksLikeJunk(tr('The Weeknd', 'Blinding Lights')),
+            isFalse));
+  });
 }

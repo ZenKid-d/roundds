@@ -36,12 +36,14 @@ class WaveEngine {
     required List<Track> Function() favorites,
     required WaveMode Function() mode,
     required WaveMood Function() mood,
+    required Set<String> Function() blacklist,
   })  : _store = store,
         _aggregator = aggregator,
         _providers = providers,
         _favorites = favorites,
         _mode = mode,
-        _moodOf = mood;
+        _moodOf = mood,
+        _blacklist = blacklist;
 
   final RecsStore _store;
   final Aggregator _aggregator;
@@ -49,6 +51,9 @@ class WaveEngine {
   final List<Track> Function() _favorites;
   final WaveMode Function() _mode;
   final WaveMood Function() _moodOf;
+
+  /// Нормализованные ключи забаненных артистов (из библиотеки).
+  final Set<String> Function() _blacklist;
 
   /// Максимум сетевых резолвов (RawCandidate без готового трека) за генерацию.
   static const int _maxResolvePerGen = 14;
@@ -66,6 +71,34 @@ class WaveEngine {
     if (d == null) return true;
     final s = d.inSeconds;
     return s >= _minTrackSec && s <= _maxTrackSec;
+  }
+
+  // Высокоточные маркеры «мусорных» версий: редко встречаются в названиях/именах
+  // настоящих релизов, поэтому риск ложных срабатываний низкий (не режем «cover»/
+  // «live»/«remix» — там много легитимного).
+  static const List<String> _junkTitleMarkers = [
+    'karaoke', 'nightcore', 'type beat', 'made famous by',
+    'originally performed', 'in the style of', '8d audio', 'sped up',
+    'sped-up', 'slowed + reverb', 'slowed and reverb', 'cover version',
+    'ringtone', 'guitar backing track', 'drumless', 'metal cover',
+  ];
+  static const List<String> _junkArtistMarkers = [
+    'karaoke', 'tribute', 'made famous', 'vitamin string quartet',
+    'nightcore', 'type beat', 'cover band', '8-bit', '8 bit',
+    'lullaby versions', 'rockabye baby',
+  ];
+
+  /// Явный «мусор»: каверы/караоке/nightcore/8D/ускоренные/type beat и т.п.
+  static bool looksLikeJunk(Track t) {
+    final title = t.title.toLowerCase();
+    for (final m in _junkTitleMarkers) {
+      if (title.contains(m)) return true;
+    }
+    final artist = t.artist.toLowerCase();
+    for (final m in _junkArtistMarkers) {
+      if (artist.contains(m)) return true;
+    }
+    return false;
   }
 
   // --- состояние сессии ---
@@ -189,17 +222,40 @@ class WaveEngine {
     final extra = await Future.wait(batch.map((c) async {
       try {
         final found =
-            await _aggregator.search('${c.artist} ${c.title}', perSource: 1);
-        return found.isEmpty
+            await _aggregator.search('${c.artist} ${c.title}', perSource: 3);
+        // Берём результат, реально совпадающий с кандидатом (точный ключ, иначе
+        // fuzzy). Без проверки резолв часто подсовывает кавер/караоке/ускоренный/
+        // чужой трек — это и есть мусор.
+        Track? exact;
+        Track? fuzzy;
+        for (final t in found) {
+          if (exact == null &&
+              RecsDedup.normKey(c.artist, c.title) ==
+                  RecsDedup.normKey(t.artist, t.title)) {
+            exact = t;
+          } else if (fuzzy == null &&
+              RecsDedup.resolvesTo(c.artist, c.title, t.artist, t.title)) {
+            fuzzy = t;
+          }
+        }
+        final match = exact ?? fuzzy;
+        return match == null
             ? null
-            : WaveCandidate(found.first, tags: c.tags, popularity: c.popularity);
+            : WaveCandidate(match, tags: c.tags, popularity: c.popularity);
       } catch (_) {
         return null;
       }
     }));
     resolved.addAll(extra.whereType<WaveCandidate>());
-    // Отсекаем не-музыку (обычные видео/миксы/шортсы) — по длительности.
-    return [for (final c in resolved) if (looksLikeMusic(c.track)) c];
+    // Финальная чистка: только музыка, без мусорных версий и забаненных артистов.
+    final blocked = _blacklist();
+    return [
+      for (final c in resolved)
+        if (looksLikeMusic(c.track) &&
+            !looksLikeJunk(c.track) &&
+            !blocked.contains(c.artistKey))
+          c
+    ];
   }
 
   // --- real-time петля ---

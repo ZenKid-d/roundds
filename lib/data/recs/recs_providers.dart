@@ -11,6 +11,7 @@ import '../../domain/models/source_type.dart';
 import 'candidates/candidate_provider.dart';
 import 'candidates/lastfm_provider.dart';
 import 'candidates/source_candidate_providers.dart';
+import 'recs_dedup.dart';
 import 'taste_profile.dart';
 import 'wave_engine.dart';
 import 'wave_mode.dart';
@@ -59,4 +60,9 @@ final Provider<WaveEngine> waveEngineProvider = Provider<WaveEngine>((ref) => Wa
       favorites: () => ref.read(libraryProvider).liked,
       mode: () => ref.read(waveModeProvider),
       mood: () => ref.read(waveMoodProvider),
+      blacklist: () => ref
+          .read(libraryProvider)
+          .blacklistedArtists
+          .map(RecsDedup.normalize)
+          .toSet(),
     ));
