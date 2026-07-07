@@ -187,6 +187,16 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
+  /// Музыкальный ли это связанный стрим, а не обычное видео. Достоверный признак
+  /// — авто-канал YouTube «<Артист> - Topic» (Art Track лицензированной музыки)
+  /// или VEVO. Иначе отсекаем: в похожие не должны лезть влоги/миксы/подкасты/
+  /// стримы/шортсы. Если строгий фильтр опустошит related, вызывающий
+  /// [relatedTo] в режиме обхода падает назад на InnerTube music-radio.
+  static bool _isMusicStream(Map it) {
+    final uploader = (it['uploaderName'] ?? '').toString().toLowerCase();
+    return uploader.contains('- topic') || uploader.contains('vevo');
+  }
+
   Future<List<Track>> _pipedRelated(String videoId, {int limit = 40}) async {
     final r = await _raceInstances(
         _instances(), (base) => _pipedRelatedOn(base, videoId, limit));
@@ -204,6 +214,7 @@ class YoutubeMusicSource implements MusicSource {
       for (final it in items) {
         if (it is! Map) continue;
         if (it['type'] != null && it['type'] != 'stream') continue;
+        if (!_isMusicStream(it)) continue; // только музыка, не обычные видео
         final t = pipedItemToTrack(it);
         if (t != null && seen.add(t.id)) out.add(t);
         if (out.length >= limit) break;
