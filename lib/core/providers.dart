@@ -13,6 +13,7 @@ import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
 import '../data/recommendation_service.dart';
+import '../data/recs/recs_providers.dart';
 import '../data/recs/recs_store.dart';
 import '../data/spotify_import.dart';
 import '../data/translation_service.dart';
@@ -107,10 +108,24 @@ final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
   final lastfm = ref.read(lastfmServiceProvider);
   pc.onNowPlaying = lastfm.updateNowPlaying;
   pc.onScrobble = lastfm.scrobble;
-  // Recs v2: event log из плеера.
+  // Recs v2: event log из плеера + движок волны (докрутка + real-time петля).
   final recs = ref.read(recsStoreProvider);
+  final engine = ref.read(waveEngineProvider);
+  final handler = ref.read(audioHandlerProvider);
+  handler.radioExtender = engine.extend; // волна докручивает очередь (было reco)
   pc.onTrackStartedSignal = recs.recordStart;
-  pc.onTrackEnded = recs.recordPlayback;
+  pc.onTrackEnded = (track, playedMs, durMs) {
+    recs.recordPlayback(track, playedMs, durMs);
+    // Скип меняет направление сессии и хвост очереди — только пока играет волна.
+    if (engine.noteEnded(track, playedMs, durMs) && pc.isRadio) {
+      final cur = pc.current;
+      if (cur != null) {
+        engine.extend(cur).then((tail) {
+          if (tail.isNotEmpty) handler.replaceUpcoming(tail);
+        });
+      }
+    }
+  };
   return pc;
 });
 
@@ -124,6 +139,7 @@ final libraryProvider = ChangeNotifierProvider<LibraryController>((ref) {
   // Авто-скачивание лайкнутого трека, если включено в настройках.
   c.onTrackLiked = (track) {
     ref.read(recsStoreProvider).recordLike(track); // recs v2: сигнал лайка
+    ref.read(waveEngineProvider).noteLike(track); // волна: усилить направление
     if (ref.read(prefsProvider).getBool('autodl_likes') ?? false) {
       ref.read(downloadsProvider).download(track);
     }

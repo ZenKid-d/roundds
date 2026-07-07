@@ -87,6 +87,22 @@ class TasteProfile {
     return alpha * s + (1 - alpha) * l;
   }
 
+  /// Копия профиля с наложенными на краткосрочную часть сессионными дельтами
+  /// (real-time направление волны: скипы топят, лайки поднимают артистов).
+  TasteProfile withSessionOverrides(Map<String, double> deltas) {
+    if (deltas.isEmpty) return this;
+    final merged = {...shortArtists};
+    deltas.forEach((k, v) => merged[k] = (merged[k] ?? 0) + v);
+    return TasteProfile(
+      longArtists: longArtists,
+      shortArtists: merged,
+      negArtists: negArtists,
+      longTags: longTags,
+      negTags: negTags,
+      heardArtists: heardArtists,
+    );
+  }
+
   double tagAffinity(String tag) => longTags[tag] ?? 0;
 
   double negativeArtistAffinity(String artistKey) => negArtists[artistKey] ?? 0;

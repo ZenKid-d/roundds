@@ -7,6 +7,8 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
 import '../../data/recommendation_service.dart';
+import '../../data/recs/recs_providers.dart';
+import '../../data/recs/wave_mode.dart';
 import '../../domain/models/track.dart';
 import '../artist/followed_artists_screen.dart';
 import '../charts/charts_screen.dart';
@@ -60,10 +62,12 @@ class HomeScreen extends ConsumerWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: _Greeting()),
-          if (canRadio)
+          if (canRadio) ...[
             SliverToBoxAdapter(
-              child: _RadioCard(onTap: () => _startTasteRadio(ref, context)),
+              child: _RadioCard(onTap: () => _startWave(ref, context)),
             ),
+            const SliverToBoxAdapter(child: _WaveCharacterChips()),
+          ],
           SliverToBoxAdapter(
             child: _GenreChips(
                 onGenre: (g) => _startGenreRadio(ref, context, g)),
@@ -215,18 +219,60 @@ class _GenreChips extends StatelessWidget {
   }
 }
 
-Future<void> _startTasteRadio(WidgetRef ref, BuildContext context) async {
-  final lib = ref.read(libraryProvider);
-  final seed = lib.history.isNotEmpty
-      ? lib.history.first
-      : (lib.liked.isNotEmpty ? lib.liked.first : null);
-  if (seed == null) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Собираю радио…'), duration: Duration(seconds: 1)));
-  final list = await ref.read(recommendationServiceProvider).radioFrom(seed);
-  await ref.read(playbackProvider).startRadio(seed, list);
-  ref.read(libraryProvider).pushHistory(seed);
+/// «Моя волна» — живой поток из движка рекомендаций (профиль + кандидаты +
+/// скоринг + anti-repetition). Real-time адаптируется на скип/лайк.
+Future<void> _startWave(WidgetRef ref, BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(const SnackBar(
+      content: Text('Собираю волну…'), duration: Duration(seconds: 1)));
+  final engine = ref.read(waveEngineProvider);
+  List<Track> buffer;
+  try {
+    buffer = await engine.start();
+  } catch (_) {
+    buffer = const [];
+  }
+  if (buffer.isEmpty) {
+    if (context.mounted) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Пока мало данных для волны — '
+              'послушайте что-нибудь или уберите дизлайки')));
+    }
+    return;
+  }
+  await ref.read(playbackProvider).startRadio(buffer.first, buffer);
+  ref.read(libraryProvider).pushHistory(buffer.first);
   if (context.mounted) context.push('/player');
+}
+
+/// Чипы характера волны (Баланс/Любимое/Незнакомое/Популярное).
+class _WaveCharacterChips extends ConsumerWidget {
+  const _WaveCharacterChips();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(waveModeProvider);
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        itemCount: WaveMode.values.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final m = WaveMode.values[i];
+          return ChoiceChip(
+            label: Text(m.label, style: const TextStyle(fontSize: 12.5)),
+            selected: m == mode,
+            onSelected: (_) {
+              ref.read(waveModeProvider.notifier).state = m;
+              ref.read(prefsProvider).setString('wave_mode', m.id);
+            },
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _RadioCard extends StatelessWidget {
@@ -253,17 +299,17 @@ class _RadioCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-                child: const Icon(Icons.radio, color: Colors.black, size: 22),
+                child: const Icon(Icons.graphic_eq, color: Colors.black, size: 22),
               ),
               const SizedBox(width: 12),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Моё радио',
+                    Text('Моя волна',
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600)),
-                    Text('Бесконечный микс по вашим вкусам',
+                    Text('Живой поток — адаптируется под тебя',
                         style: TextStyle(fontSize: 11.5, color: Colors.white60)),
                   ],
                 ),

@@ -565,6 +565,22 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
   }
 
+  /// Recs v2: заменяет «хвост» очереди новыми треками, сохраняя текущий и
+  /// следующий (который мог быть предзагружен/буферизован). Волна зовёт это
+  /// при real-time адаптации после скипа.
+  void replaceUpcoming(List<Track> tail) {
+    if (_queue.isEmpty || tail.isEmpty) return;
+    final keepEnd = (_index + 2).clamp(0, _queue.length);
+    final head = _queue.sublist(0, keepEnd);
+    final headUids = head.map((t) => t.uid).toSet();
+    _queue
+      ..clear()
+      ..addAll(head)
+      ..addAll(tail.where((t) => !headUids.contains(t.uid)));
+    _resyncGaplessNext();
+    _notify();
+  }
+
   /// Вставляет трек сразу после текущего («играть следующим»).
   void playNextInQueue(Track t) {
     final at = (_index >= 0 ? _index + 1 : _queue.length)

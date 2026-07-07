@@ -74,8 +74,9 @@ Future<void> main() async {
   );
   // Оффлайн: плеер сначала ищет скачанный файл.
   handler.localFileResolver = downloads.localPathFor;
-  // Радио: докрутка очереди похожими треками.
-  handler.radioExtender = reco.similarTo;
+  // Recs v2: докрутку очереди («радио»/волна) ставит движок волны в
+  // playbackProvider (handler.radioExtender = waveEngine.extend) — заменяет
+  // старую reco.similarTo-докрутку.
   // Кроссфейд + длительность + пропуск тишины — из сохранённых настроек.
   final cfSeconds = prefs.getDouble('crossfade_seconds');
   if (cfSeconds != null) handler.setCrossfadeSeconds(cfSeconds);
