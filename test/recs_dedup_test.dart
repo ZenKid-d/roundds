@@ -40,4 +40,37 @@ void main() {
           RecsDedup.normalize('Bohemian Rhapsody'));
     });
   });
+
+  group('RecsDedup fuzzy', () {
+    test('tokenSimilarity: тот же набор слов = 1', () {
+      expect(RecsDedup.tokenSimilarity('hello world', 'world hello'), 1.0);
+    });
+
+    test('levenshteinRatio: опечатка на 1 символ высока', () {
+      expect(RecsDedup.levenshteinRatio('beyonce', 'beyonse'), greaterThan(0.8));
+    });
+
+    test('isFuzzyDuplicate: точный ключ (radio edit вырезан)', () {
+      expect(
+        RecsDedup.isFuzzyDuplicate(
+            'Daft Punk', 'Get Lucky', 'Daft Punk', 'Get Lucky (Radio Edit)'),
+        isTrue,
+      );
+    });
+
+    test('isFuzzyDuplicate: разные треки одного артиста — не дубликат', () {
+      expect(
+        RecsDedup.isFuzzyDuplicate(
+            'Daft Punk', 'Get Lucky', 'Daft Punk', 'Instant Crush'),
+        isFalse,
+      );
+    });
+
+    test('isFuzzyDuplicate: разные артисты — не дубликат', () {
+      expect(
+        RecsDedup.isFuzzyDuplicate('Artist X', 'Song', 'Artist Y', 'Song'),
+        isFalse,
+      );
+    });
+  });
 }

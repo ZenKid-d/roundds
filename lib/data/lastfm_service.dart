@@ -111,4 +111,159 @@ class LastfmService {
           options: Options(contentType: Headers.formUrlEncodedContentType));
     } catch (_) {/* скробблинг не критичен */}
   }
+
+  // --- Read-методы графа похожести/тегов (Recs v2) ---
+  // Нужен только API-ключ (без сессии/подписи): работают, даже если юзер не
+  // залогинен в Last.fm, но ввёл ключ. Без ключа — движок опирается на
+  // source/SC/YT-провайдеры (Q2).
+
+  /// Доступны ли read-методы (есть непустой API-ключ).
+  bool get hasApiKey => _apiKey?.isNotEmpty ?? false;
+
+  Future<Map<String, dynamic>?> _read(Map<String, String> params) async {
+    if (!hasApiKey) return null;
+    try {
+      final r = await _dio.get(_base, queryParameters: {
+        ...params,
+        'api_key': _apiKey!,
+        'format': 'json',
+      });
+      return _asMap(r.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// track.getSimilar → похожие треки (artist/title/match 0..1).
+  Future<List<({String artist, String title, double weight})>> getSimilarTracks(
+      String artist, String title,
+      {int limit = 30}) async {
+    final j = await _read({
+      'method': 'track.getsimilar',
+      'artist': artist,
+      'track': title,
+      'autocorrect': '1',
+      'limit': '$limit',
+    });
+    final list = _nodeList(_asMap(j?['similartracks'])?['track']);
+    return [
+      for (final m in list)
+        (
+          artist: _artistName(m),
+          title: (m['name'] as String?) ?? '',
+          weight: _toDouble(m['match']),
+        )
+    ].where((e) => e.artist.isNotEmpty && e.title.isNotEmpty).toList();
+  }
+
+  /// artist.getSimilar → похожие артисты.
+  Future<List<({String name, double weight})>> getSimilarArtists(String artist,
+      {int limit = 30}) async {
+    final j = await _read({
+      'method': 'artist.getsimilar',
+      'artist': artist,
+      'autocorrect': '1',
+      'limit': '$limit',
+    });
+    final list = _nodeList(_asMap(j?['similarartists'])?['artist']);
+    return [
+      for (final m in list)
+        (name: (m['name'] as String?) ?? '', weight: _toDouble(m['match']))
+    ].where((e) => e.name.isNotEmpty).toList();
+  }
+
+  /// track.getTopTags → теги трека (lowercase).
+  Future<List<String>> getTrackTopTags(String artist, String title,
+          {int limit = 10}) async =>
+      _tagNames(
+        await _read({
+          'method': 'track.gettoptags',
+          'artist': artist,
+          'track': title,
+          'autocorrect': '1',
+        }),
+        limit,
+      );
+
+  /// artist.getTopTags → теги артиста (lowercase).
+  Future<List<String>> getArtistTopTags(String artist, {int limit = 10}) async =>
+      _tagNames(
+        await _read({
+          'method': 'artist.gettoptags',
+          'artist': artist,
+          'autocorrect': '1',
+        }),
+        limit,
+      );
+
+  /// tag.getTopArtists → артисты по тегу (для онбординга/exploration).
+  Future<List<String>> getTagTopArtists(String tag, {int limit = 30}) async {
+    final j = await _read({
+      'method': 'tag.gettopartists',
+      'tag': tag,
+      'limit': '$limit',
+    });
+    final list = _nodeList(_asMap(j?['topartists'])?['artist']);
+    return [for (final m in list) (m['name'] as String?) ?? '']
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  /// tag.getTopTracks → треки по тегу.
+  Future<List<({String artist, String title})>> getTagTopTracks(String tag,
+      {int limit = 30}) async {
+    final j = await _read({
+      'method': 'tag.gettoptracks',
+      'tag': tag,
+      'limit': '$limit',
+    });
+    final list = _nodeList(_asMap(j?['tracks'])?['track']);
+    return [
+      for (final m in list)
+        (artist: _artistName(m), title: (m['name'] as String?) ?? '')
+    ].where((e) => e.artist.isNotEmpty && e.title.isNotEmpty).toList();
+  }
+
+  static List<String> _tagNames(Map<String, dynamic>? j, int limit) {
+    final list = _nodeList(_asMap(j?['toptags'])?['tag']);
+    return [
+      for (final m in list) ((m['name'] as String?) ?? '').toLowerCase()
+    ].where((s) => s.isNotEmpty).take(limit).toList();
+  }
+
+  static String _artistName(Map<String, dynamic> m) {
+    final a = m['artist'];
+    if (a is Map) return (a['name'] as String?) ?? '';
+    if (a is String) return a;
+    return '';
+  }
+
+  static double _toDouble(Object? v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? 0.0;
+    return 0.0;
+  }
+
+  static Map<String, dynamic>? _asMap(Object? data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is String && data.isNotEmpty) {
+      try {
+        final d = jsonDecode(data);
+        if (d is Map<String, dynamic>) return d;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// Last.fm отдаёт объект вместо массива, когда результат один — нормализуем.
+  static List<Map<String, dynamic>> _nodeList(Object? node) {
+    if (node is List) {
+      return [
+        for (final e in node)
+          if (e is Map<String, dynamic>) e
+      ];
+    }
+    if (node is Map<String, dynamic>) return [node];
+    return const [];
+  }
 }

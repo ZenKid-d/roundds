@@ -8,6 +8,7 @@ import '../../domain/models/track.dart';
 import 'recs_db.dart';
 import 'recs_dedup.dart';
 import 'recs_signals.dart';
+import 'taste_profile.dart';
 
 /// Recs v2 — высокоуровневый стор поверх [RecsDb]: логирование событий,
 /// дизлайки (hard-фильтр), cooldown, одноразовый импорт из библиотеки.
@@ -157,6 +158,110 @@ class RecsStore extends ChangeNotifier {
         }
       }
       await batch.commit(noResult: true);
+    } catch (_) {}
+  }
+
+  // --- профиль вкуса ---
+
+  /// Плоский список событий для построения профиля (новые сверху).
+  Future<List<ProfileEvent>> loadProfileEvents({int limit = 5000}) async {
+    try {
+      final rows = await _sql.query('events',
+          columns: ['artist', 'ts', 'kind'], orderBy: 'ts DESC', limit: limit);
+      return [
+        for (final r in rows)
+          ProfileEvent(
+            artist: (r['artist'] as String?) ?? '',
+            kind: SignalKindId.fromId((r['kind'] as String?) ?? 'play'),
+            tsSec: (r['ts'] as int?) ?? 0,
+          ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Строит профиль из event log и сохраняет снапшот. Построение лёгкое;
+  /// тяжёлое ранжирование пула кандидатов уйдёт в изолейт (Фаза 3).
+  Future<TasteProfile> buildProfile({int maxEvents = 5000}) async {
+    final events = await loadProfileEvents(limit: maxEvents);
+    final profile = TasteProfileBuilder.build(events, nowSec: _nowSec);
+    unawaited(_saveSnapshot(profile));
+    return profile;
+  }
+
+  Future<TasteProfile> loadSnapshot() async {
+    try {
+      final rows =
+          await _sql.query('profile_snapshot', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) return TasteProfile.empty;
+      return TasteProfile.decode(rows.first['payload'] as String);
+    } catch (_) {
+      return TasteProfile.empty;
+    }
+  }
+
+  Future<void> _saveSnapshot(TasteProfile p) async {
+    try {
+      await _sql.insert(
+        'profile_snapshot',
+        {'id': 1, 'payload': p.encode(), 'updated_ts': _nowSec},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  // --- cooldown (anti-repetition) ---
+
+  /// `track_key → last_played_ts` для скоринга/фильтра повторов.
+  Future<Map<String, int>> cooldownMap() async {
+    try {
+      final rows = await _sql.query('cooldowns');
+      return {
+        for (final r in rows)
+          (r['track_key'] as String): (r['last_played_ts'] as int),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Отмечает трек как прозвучавший в волне сейчас (для cooldown-таблицы).
+  void markPlayedInWave(Track t) {
+    unawaited(() async {
+      try {
+        await _sql.insert(
+          'cooldowns',
+          {'track_key': keyFor(t), 'last_played_ts': _nowSec},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } catch (_) {}
+    }());
+  }
+
+  // --- кэш похожести (TTL ~7 дней) ---
+
+  Future<String?> similarCacheGet(String cacheKey,
+      {Duration ttl = const Duration(days: 7)}) async {
+    try {
+      final rows = await _sql.query('similar_cache',
+          where: 'cache_key = ?', whereArgs: [cacheKey], limit: 1);
+      if (rows.isEmpty) return null;
+      final fetched = rows.first['fetched_ts'] as int;
+      if (_nowSec - fetched > ttl.inSeconds) return null;
+      return rows.first['payload'] as String;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> similarCachePut(String cacheKey, String payload) async {
+    try {
+      await _sql.insert(
+        'similar_cache',
+        {'cache_key': cacheKey, 'payload': payload, 'fetched_ts': _nowSec},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     } catch (_) {}
   }
 }
