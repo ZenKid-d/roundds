@@ -301,6 +301,12 @@ class RoundsAudioHandler extends BaseAudioHandler {
     Object? lastErr;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
+        if (attempt > 0) {
+          // Сброс возможно-залипшего состояния плеера после сбоя соединения.
+          try {
+            await _player.stop();
+          } catch (_) {}
+        }
         final local = localFileResolver?.call(track.uid);
         if (local != null) {
           await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
@@ -376,6 +382,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _preStream = null;
     _aggregator.evictStreamCache(track); // не отдать битую ссылку из кэша
     try {
+      try {
+        await _player.stop(); // сбросить возможно-залипшее состояние плеера
+      } catch (_) {}
       await _load();
       if (_error == null && pos > Duration.zero) {
         try {
@@ -444,21 +453,44 @@ class RoundsAudioHandler extends BaseAudioHandler {
     _notify();
     mediaItem.add(_toMediaItem(track));
     onTrackStarted?.call(track);
-    try {
-      final src = await _sourceForTrack(track);
-      final concat = ConcatenatingAudioSource(children: [src]);
-      _concat = concat;
-      _gaplessNext = null;
-      await _player.setAudioSource(concat);
-      _player.play();
-      unawaited(_maybeExtendRadio());
-      unawaited(_appendNextGapless());
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _loading = false;
-      _notify();
+    // До 2 попыток: при обрыве соединения делаем свежий резолв и сброс плеера,
+    // чтобы не залипнуть с ошибкой (иначе приходилось перезапускать приложение).
+    Object? lastErr;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt > 0) {
+          _preUid = null;
+          _preStream = null;
+          _aggregator.evictStreamCache(track);
+          try {
+            await _player.stop();
+          } catch (_) {}
+        }
+        final src = await _sourceForTrack(track);
+        final concat = ConcatenatingAudioSource(children: [src]);
+        _concat = concat;
+        _gaplessNext = null;
+        await _player.setAudioSource(concat);
+        _player.play();
+        _error = null;
+        lastErr = null;
+        _saveSession();
+        unawaited(_maybeExtendRadio());
+        unawaited(_appendNextGapless());
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
     }
+    if (lastErr != null) {
+      _error = 'Не удалось воспроизвести трек — источник недоступен. '
+          'Нажмите «Повтор» или переключите трек.';
+    }
+    _loading = false;
+    _notify();
   }
 
   /// Следующий логический индекс с учётом repeat/shuffle/radio; null — конец.
