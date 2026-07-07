@@ -49,6 +49,21 @@ class WaveEngine {
   /// Максимум сетевых резолвов (RawCandidate без готового трека) за генерацию.
   static const int _maxResolvePerGen = 14;
 
+  /// Границы длительности «музыкального трека».
+  static const int _minTrackSec = 45; // ниже — шортсы/клипы
+  static const int _maxTrackSec = 12 * 60; // выше — миксы/стримы/подкасты
+
+  /// Похоже ли на музыкальный трек, а не на обычное видео. Основной источник
+  /// «видео» в волне — YouTube related (Piped relatedStreams не фильтрует по
+  /// музыке), поэтому чистим централизованно по длительности; неизвестная
+  /// длительность — не отбрасываем.
+  static bool looksLikeMusic(Track t) {
+    final d = t.duration;
+    if (d == null) return true;
+    final s = d.inSeconds;
+    return s >= _minTrackSec && s <= _maxTrackSec;
+  }
+
   // --- состояние сессии ---
   TasteProfile _profile = TasteProfile.empty;
   final Map<String, double> _sessionArtist = {}; // real-time оверрайды short
@@ -171,7 +186,8 @@ class WaveEngine {
       }
     }));
     resolved.addAll(extra.whereType<WaveCandidate>());
-    return resolved;
+    // Отсекаем не-музыку (обычные видео/миксы/шортсы) — по длительности.
+    return [for (final c in resolved) if (looksLikeMusic(c.track)) c];
   }
 
   // --- real-time петля ---

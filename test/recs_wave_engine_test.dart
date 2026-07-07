@@ -131,4 +131,22 @@ void main() {
       expect(fresh, greaterThan(likedAdapted));
     });
   });
+
+  group('WaveEngine.looksLikeMusic (фильтр не-музыки)', () {
+    Track track(int? sec) => Track(
+          id: '${sec ?? -1}',
+          title: 'x',
+          artist: 'y',
+          source: SourceType.soundcloud,
+          duration: sec == null ? null : Duration(seconds: sec),
+        );
+    test('трек 3 минуты — музыка',
+        () => expect(WaveEngine.looksLikeMusic(track(180)), isTrue));
+    test('часовой микс — не музыка',
+        () => expect(WaveEngine.looksLikeMusic(track(3600)), isFalse));
+    test('шортс/клип 20 сек — не музыка',
+        () => expect(WaveEngine.looksLikeMusic(track(20)), isFalse));
+    test('неизвестная длительность — оставляем',
+        () => expect(WaveEngine.looksLikeMusic(track(null)), isTrue));
+  });
 }
