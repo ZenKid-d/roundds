@@ -19,18 +19,13 @@ final feedProvider = FutureProvider<List<Track>>((ref) async {
   return ref.read(aggregatorProvider).feed();
 });
 
-/// Персональные рекомендации (на основе истории/лайков/статистики).
-/// Читаем библиотеку через read (не watch), чтобы не пересчитывать на каждый трек.
+/// Персональные ряды главной. Recs v2: строит движок волны (профиль вкуса +
+/// кандидаты + скоринг + anti-repetition), а не сырые similar-эндпоинты v1.
 final recommendationsProvider = FutureProvider<List<RecoRow>>((ref) async {
   ref.watch(settingsProvider);
   final lib = ref.read(libraryProvider);
   if (lib.history.isEmpty && lib.liked.isEmpty) return const [];
-  return ref.read(recommendationServiceProvider).forYou(
-        history: lib.history,
-        liked: lib.liked,
-        topTracks: lib.topTracks(limit: 10),
-        topArtists: lib.topArtists(limit: 5),
-      );
+  return ref.read(waveEngineProvider).buildHomeRows();
 });
 
 class HomeScreen extends ConsumerWidget {

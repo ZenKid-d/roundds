@@ -6,6 +6,7 @@ library;
 
 import '../../domain/models/track.dart';
 import '../aggregator.dart';
+import '../recommendation_service.dart' show RecoRow;
 import 'candidates/candidate_provider.dart';
 import 'recs_dedup.dart';
 import 'recs_signals.dart';
@@ -90,7 +91,11 @@ class WaveEngine {
   }
 
   Future<List<Track>> _generate(List<Track> seeds, {required int limit}) async {
-    final pool = await _gather(seeds);
+    final pool = await _gather(
+      seeds,
+      seedArtists: _profile.topArtists(limit: 6),
+      seedTags: _profile.topTags(limit: 4),
+    );
     final cooldown = await _store.cooldownMap();
     final ranked = rankWave(
       pool,
@@ -113,11 +118,15 @@ class WaveEngine {
 
   /// I/O: провайдеры → резолв в играбельные треки. Дизлайки/дедуп/скоринг —
   /// дальше в [rankWave].
-  Future<List<WaveCandidate>> _gather(List<Track> seeds) async {
+  Future<List<WaveCandidate>> _gather(
+    List<Track> seeds, {
+    List<String> seedArtists = const [],
+    List<String> seedTags = const [],
+  }) async {
     final query = CandidateQuery(
       seeds: seeds,
-      seedArtists: _profile.topArtists(limit: 6),
-      seedTags: _profile.topTags(limit: 4),
+      seedArtists: seedArtists,
+      seedTags: seedTags,
       limitPerSeed: 15,
     );
     final available = <CandidateProvider>[];
@@ -200,6 +209,92 @@ class WaveEngine {
   void _bumpSession(String artistKey, double delta) {
     if (artistKey.isEmpty) return;
     _sessionArtist[artistKey] = (_sessionArtist[artistKey] ?? 0) + delta;
+  }
+
+  // --- ряды главной v2 (движок, а не сырые similar-эндпоинты) ---
+
+  /// Ряды для главной: «Для вас» (топ по долгосрочному профилю), «Новое для
+  /// тебя» (чистый exploration) и «Похожее на {артист}» (сид ротируется по дню).
+  /// Не трогает состояние живой волны.
+  Future<List<RecoRow>> buildHomeRows({int perRow = 20}) async {
+    final profile = await _store.buildProfile();
+    final favs = _favorites();
+    final cooldown = await _store.cooldownMap();
+    final disliked = _store.dislikedKeys;
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final rows = <RecoRow>[];
+
+    final pool = await _gather(
+      favs.take(5).toList(),
+      seedArtists: profile.topArtists(limit: 6),
+      seedTags: profile.topTags(limit: 4),
+    );
+
+    // 1) «Для вас» — топ скоринга по долгосрочному профилю (знакомое любимое).
+    final forYou = rankWave(
+      pool,
+      profile: profile,
+      cooldown: cooldown,
+      dislikedKeys: disliked,
+      weights: ScoreWeights.favorite,
+      constraints: WaveConstraints.balanced,
+      recentArtists: const [],
+      servedKeys: const {},
+      nowSec: nowSec,
+      limit: perRow,
+    );
+    if (forYou.length >= 4) rows.add(RecoRow('Для вас', forYou));
+
+    // 2) «Новое для тебя» — только незнакомые артисты (чистый exploration),
+    //    без пересечения с «Для вас».
+    final explorePool =
+        pool.where((c) => !profile.isKnownArtist(c.artistKey)).toList();
+    final fresh = rankWave(
+      explorePool,
+      profile: profile,
+      cooldown: cooldown,
+      dislikedKeys: disliked,
+      weights: ScoreWeights.unfamiliar,
+      constraints: WaveConstraints.balanced,
+      recentArtists: const [],
+      servedKeys: {
+        for (final t in forYou) RecsDedup.normKey(t.artist, t.title)
+      },
+      nowSec: nowSec,
+      limit: perRow,
+    );
+    if (fresh.length >= 4) rows.add(RecoRow('Новое для тебя', fresh));
+
+    // 3) «Похожее на {артист}» — сид ротируется ежедневно из топ-артистов.
+    final topArtists = profile.topArtists(limit: 8);
+    if (topArtists.isNotEmpty) {
+      final daySeed =
+          DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+      final artistKey = topArtists[daySeed % topArtists.length];
+      final artistSeeds = favs
+          .where((t) => RecsDedup.normalize(t.artist) == artistKey)
+          .take(3)
+          .toList();
+      if (artistSeeds.isNotEmpty) {
+        final aPool = await _gather(artistSeeds);
+        final sim = rankWave(
+          aPool,
+          profile: profile,
+          cooldown: cooldown,
+          dislikedKeys: disliked,
+          weights: ScoreWeights.balanced,
+          constraints: WaveConstraints.balanced,
+          recentArtists: const [],
+          servedKeys: const {},
+          nowSec: nowSec,
+          limit: perRow,
+        );
+        if (sim.length >= 4) {
+          rows.add(RecoRow('Похожее на ${artistSeeds.first.artist}', sim));
+        }
+      }
+    }
+    return rows;
   }
 
   // --- чистый ранкер (тестируемо) ---
