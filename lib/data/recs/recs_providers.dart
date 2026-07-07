@@ -14,6 +14,7 @@ import 'candidates/source_candidate_providers.dart';
 import 'taste_profile.dart';
 import 'wave_engine.dart';
 import 'wave_mode.dart';
+import 'wave_mood.dart';
 
 /// Профиль вкуса из event log (строится из recsStore, снапшот кэшируется).
 /// Пересчитывается по запросу; тяжёлое ранжирование пула — Фаза 3.
@@ -45,6 +46,10 @@ final Provider<List<CandidateProvider>> candidateProvidersProvider =
 final StateProvider<WaveMode> waveModeProvider = StateProvider<WaveMode>(
     (ref) => WaveModeX.fromId(ref.read(prefsProvider).getString('wave_mode')));
 
+/// Настроение волны (приблизительно, через теги Last.fm), персист в prefs.
+final StateProvider<WaveMood> waveMoodProvider = StateProvider<WaveMood>((ref) =>
+    WaveMoodX.fromId(ref.read(prefsProvider).getString('wave_mood_tag')));
+
 /// Движок «Моей волны» — держит сессию, докручивает очередь, адаптируется на
 /// скип/лайк. Один на приложение.
 final Provider<WaveEngine> waveEngineProvider = Provider<WaveEngine>((ref) => WaveEngine(
@@ -53,4 +58,5 @@ final Provider<WaveEngine> waveEngineProvider = Provider<WaveEngine>((ref) => Wa
       providers: ref.read(candidateProvidersProvider),
       favorites: () => ref.read(libraryProvider).liked,
       mode: () => ref.read(waveModeProvider),
+      mood: () => ref.read(waveMoodProvider),
     ));

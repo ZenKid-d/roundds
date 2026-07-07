@@ -15,6 +15,7 @@ import 'scorer.dart';
 import 'taste_profile.dart';
 import 'wave_constraints.dart';
 import 'wave_mode.dart';
+import 'wave_mood.dart';
 
 /// Кандидат волны: играбельный трек + фичи скоринга.
 class WaveCandidate {
@@ -34,17 +35,20 @@ class WaveEngine {
     required List<CandidateProvider> providers,
     required List<Track> Function() favorites,
     required WaveMode Function() mode,
+    required WaveMood Function() mood,
   })  : _store = store,
         _aggregator = aggregator,
         _providers = providers,
         _favorites = favorites,
-        _mode = mode;
+        _mode = mode,
+        _moodOf = mood;
 
   final RecsStore _store;
   final Aggregator _aggregator;
   final List<CandidateProvider> _providers;
   final List<Track> Function() _favorites;
   final WaveMode Function() _mode;
+  final WaveMood Function() _moodOf;
 
   /// Максимум сетевых резолвов (RawCandidate без готового трека) за генерацию.
   static const int _maxResolvePerGen = 14;
@@ -106,10 +110,13 @@ class WaveEngine {
   }
 
   Future<List<Track>> _generate(List<Track> seeds, {required int limit}) async {
+    final moodTags = _moodOf().tags;
     final pool = await _gather(
       seeds,
       seedArtists: _profile.topArtists(limit: 6),
-      seedTags: _profile.topTags(limit: 4),
+      // Настроение подмешивает свои теги в сиды: tag.getTopTracks отдаст треки
+      // этого настроения (при наличии Last.fm).
+      seedTags: [..._profile.topTags(limit: 4), ...moodTags],
     );
     final cooldown = await _store.cooldownMap();
     final ranked = rankWave(
@@ -122,6 +129,7 @@ class WaveEngine {
       recentArtists: List.of(_recentArtists),
       servedKeys: Set.of(_served),
       nowSec: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      moodTags: moodTags.toSet(),
       limit: limit,
     );
     for (final t in ranked) {
@@ -413,6 +421,7 @@ class WaveEngine {
     required Set<String> servedKeys,
     required int nowSec,
     int limit = 18,
+    Set<String> moodTags = const {},
   }) {
     int? agoOf(WaveCandidate c) {
       final last = cooldown[RecsStore.keyFor(c.track)];
@@ -430,7 +439,14 @@ class WaveEngine {
         popularity: c.popularity,
         lastPlayedSecAgo: agoOf(c),
       ));
-      scored.add((c: c, s: sc, explore: !profile.isKnownArtist(c.artistKey)));
+      // Бонус за совпадение тега с настроением (приблизительно, при Last.fm).
+      final moodBonus =
+          moodTags.isNotEmpty && c.tags.any(moodTags.contains) ? 0.6 : 0.0;
+      scored.add((
+        c: c,
+        s: sc + moodBonus,
+        explore: !profile.isKnownArtist(c.artistKey)
+      ));
     }
     scored.sort((a, b) => b.s.compareTo(a.s));
 

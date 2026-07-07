@@ -149,4 +149,23 @@ void main() {
     test('неизвестная длительность — оставляем',
         () => expect(WaveEngine.looksLikeMusic(track(null)), isTrue));
   });
+
+  group('WaveEngine.rankWave — настроение', () {
+    test('кандидат с mood-тегом ранжируется выше такого же без тега', () {
+      final out = WaveEngine.rankWave(
+        [_wc('B', 's2'), _wc('A', 's1', tags: ['chill'])],
+        profile: TasteProfile.empty,
+        cooldown: const {},
+        dislikedKeys: const {},
+        weights: ScoreWeights.balanced,
+        constraints: WaveConstraints.balanced,
+        recentArtists: const [],
+        servedKeys: const {},
+        nowSec: 0,
+        moodTags: const {'chill'},
+        limit: 10,
+      );
+      expect(out.first.artist, 'A');
+    });
+  });
 }

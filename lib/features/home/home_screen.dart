@@ -9,6 +9,7 @@ import '../../core/widgets/track_card.dart';
 import '../../data/recommendation_service.dart';
 import '../../data/recs/recs_providers.dart';
 import '../../data/recs/wave_mode.dart';
+import '../../data/recs/wave_mood.dart';
 import '../../domain/models/track.dart';
 import '../artist/followed_artists_screen.dart';
 import '../charts/charts_screen.dart';
@@ -79,6 +80,7 @@ class HomeScreen extends ConsumerWidget {
               child: _RadioCard(onTap: () => _startWave(ref, context)),
             ),
             const SliverToBoxAdapter(child: _WaveCharacterChips()),
+            const SliverToBoxAdapter(child: _WaveMoodChips()),
           ],
           SliverToBoxAdapter(
             child: _GenreChips(
@@ -286,6 +288,46 @@ class _WaveCharacterChips extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+/// Чипы настроения волны (приблизительно, через теги Last.fm).
+class _WaveMoodChips extends ConsumerWidget {
+  const _WaveMoodChips();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mood = ref.watch(waveMoodProvider);
+    return SizedBox(
+      height: 42,
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          Text('Настроение',
+              style: TextStyle(fontSize: 11, color: AppColors.white45)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(right: 16),
+              itemCount: WaveMood.values.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final m = WaveMood.values[i];
+                return ChoiceChip(
+                  label: Text(m.label, style: const TextStyle(fontSize: 12.5)),
+                  selected: m == mood,
+                  onSelected: (_) {
+                    ref.read(waveMoodProvider.notifier).state = m;
+                    ref.read(prefsProvider).setString('wave_mood_tag', m.id);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
