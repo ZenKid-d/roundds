@@ -100,6 +100,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
   int _recoverAttempts = 0;
   String? _recoverUid;
 
+  // Авто-переход на следующий трек при сбое загрузки (обрыв соединения и т.п.).
+  // Серию ограничиваем, чтобы при пропаже сети не пролистать всю очередь.
+  static const int _maxAutoSkipOnError = 3;
+  int _errorSkipStreak = 0;
+
   // «Продолжить с места»: очередь+индекс+позицию храним в prefs, восстанавливаем
   // на старте (на паузе). Позицию сохраняем периодически, пока играет.
   SharedPreferences? _sessionPrefs;
@@ -284,11 +289,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
     await _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool autoSkipOnError = true}) async {
     final track = current;
     if (track == null) return;
     if (_gapless) {
-      await _loadGapless(track);
+      await _loadGapless(track, autoSkipOnError: autoSkipOnError);
       return;
     }
     _loading = true;
@@ -329,6 +334,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
         _player.play();
         _error = null;
         lastErr = null;
+        _errorSkipStreak = 0;
         _saveSession(); // запомнить трек/очередь для «продолжить с места»
         unawaited(_preloadNext());
         unawaited(_maybeExtendRadio());
@@ -341,19 +347,41 @@ class RoundsAudioHandler extends BaseAudioHandler {
       }
     }
     if (lastErr != null) {
-      _error = 'Не удалось воспроизвести трек — источник недоступен. '
-          'Нажмите «Повтор» или попробуйте другой источник.';
+      if (await _maybeAutoSkip(autoSkip: autoSkipOnError)) return;
+      _error = _errorSkipStreak >= _maxAutoSkipOnError
+          ? 'Похоже, пропало соединение — воспроизведение приостановлено. '
+              'Проверьте сеть и нажмите «Повтор».'
+          : 'Не удалось воспроизвести трек — источник недоступен. '
+              'Нажмите «Повтор» или переключите трек.';
+      _errorSkipStreak = 0;
     }
     _loading = false;
     _notify();
   }
 
+  /// При сбое загрузки уходит на следующий трек (минуя repeat-one), чтобы не
+  /// залипнуть на битом/оборвавшемся источнике. Серия ограничена
+  /// [_maxAutoSkipOnError] — при массовом сбое (нет сети) очередь не пролистываем.
+  Future<bool> _maybeAutoSkip({required bool autoSkip}) async {
+    final hasNext = _index + 1 < _queue.length ||
+        (_repeat == LoopMode.all && _queue.length > 1);
+    if (!autoSkip || !hasNext || _errorSkipStreak >= _maxAutoSkipOnError) {
+      return false;
+    }
+    _errorSkipStreak++;
+    _error = null;
+    _index = (_index + 1 < _queue.length) ? _index + 1 : 0;
+    await _load();
+    return true;
+  }
+
   /// Повторная попытка воспроизвести текущий трек.
   Future<void> retry() {
     _recoverUid = null; // ручной повтор — сбросить бюджет авто-восстановления
+    _errorSkipStreak = 0;
     final t = current;
     if (t != null) _aggregator.evictStreamCache(t); // свежий резолв, не из кэша
-    return _load();
+    return _load(autoSkipOnError: false); // «Повтор» — этот трек, не листаем
   }
 
   /// Ошибка воспроизведения от плеера (напр. истёкшая ссылка на поток посреди
@@ -385,7 +413,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
       try {
         await _player.stop(); // сбросить возможно-залипшее состояние плеера
       } catch (_) {}
-      await _load();
+      await _load(autoSkipOnError: false); // восстанавливаем этот трек, не листаем
       if (_error == null && pos > Duration.zero) {
         try {
           await _player.seek(pos);
@@ -447,7 +475,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     return AudioSource.uri(s.uri, headers: s.headers);
   }
 
-  Future<void> _loadGapless(Track track) async {
+  Future<void> _loadGapless(Track track, {bool autoSkipOnError = true}) async {
     _loading = true;
     _error = null;
     _notify();
@@ -474,6 +502,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
         _player.play();
         _error = null;
         lastErr = null;
+        _errorSkipStreak = 0;
         _saveSession();
         unawaited(_maybeExtendRadio());
         unawaited(_appendNextGapless());
@@ -486,8 +515,13 @@ class RoundsAudioHandler extends BaseAudioHandler {
       }
     }
     if (lastErr != null) {
-      _error = 'Не удалось воспроизвести трек — источник недоступен. '
-          'Нажмите «Повтор» или переключите трек.';
+      if (await _maybeAutoSkip(autoSkip: autoSkipOnError)) return;
+      _error = _errorSkipStreak >= _maxAutoSkipOnError
+          ? 'Похоже, пропало соединение — воспроизведение приостановлено. '
+              'Проверьте сеть и нажмите «Повтор».'
+          : 'Не удалось воспроизвести трек — источник недоступен. '
+              'Нажмите «Повтор» или переключите трек.';
+      _errorSkipStreak = 0;
     }
     _loading = false;
     _notify();
