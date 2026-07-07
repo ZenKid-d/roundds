@@ -1,7 +1,7 @@
 name: roundds
 description: "Roundds — единый плеер музыки из разных источников (YouTube Music, SoundCloud, Яндекс Музыка)."
 publish_to: "none"
-version: 2.1.0+33
+version: 2.1.1+34
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
