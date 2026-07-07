@@ -17,13 +17,15 @@ import 'wave_mode.dart';
 
 /// Профиль вкуса из event log (строится из recsStore, снапшот кэшируется).
 /// Пересчитывается по запросу; тяжёлое ранжирование пула — Фаза 3.
-final tasteProfileProvider = FutureProvider<TasteProfile>((ref) async {
+final FutureProvider<TasteProfile> tasteProfileProvider =
+    FutureProvider<TasteProfile>((ref) async {
   final store = ref.watch(recsStoreProvider);
   return store.buildProfile();
 });
 
 /// Набор pluggable-провайдеров кандидатов.
-final candidateProvidersProvider = Provider<List<CandidateProvider>>((ref) {
+final Provider<List<CandidateProvider>> candidateProvidersProvider =
+    Provider<List<CandidateProvider>>((ref) {
   final agg = ref.read(aggregatorProvider);
   bool enabled(SourceType t) => agg.enabled.contains(t);
   final store = ref.read(recsStoreProvider);
@@ -40,12 +42,12 @@ final candidateProvidersProvider = Provider<List<CandidateProvider>>((ref) {
 });
 
 /// Характер волны (Баланс/Любимое/Незнакомое/Популярное), персист в prefs.
-final waveModeProvider = StateProvider<WaveMode>(
+final StateProvider<WaveMode> waveModeProvider = StateProvider<WaveMode>(
     (ref) => WaveModeX.fromId(ref.read(prefsProvider).getString('wave_mode')));
 
 /// Движок «Моей волны» — держит сессию, докручивает очередь, адаптируется на
 /// скип/лайк. Один на приложение.
-final waveEngineProvider = Provider<WaveEngine>((ref) => WaveEngine(
+final Provider<WaveEngine> waveEngineProvider = Provider<WaveEngine>((ref) => WaveEngine(
       store: ref.read(recsStoreProvider),
       aggregator: ref.read(aggregatorProvider),
       providers: ref.read(candidateProvidersProvider),

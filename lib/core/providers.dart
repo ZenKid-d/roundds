@@ -102,7 +102,8 @@ final spotifyImportProvider = Provider<SpotifyImportService>(
 final recsStoreProvider = ChangeNotifierProvider<RecsStore>(
     (ref) => throw UnimplementedError('recsStore override missing'));
 
-final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
+final ChangeNotifierProvider<PlaybackController> playbackProvider =
+    ChangeNotifierProvider<PlaybackController>((ref) {
   final pc = PlaybackController(ref.read(audioHandlerProvider));
   pc.onListened = (ms) => ref.read(libraryProvider).addListened(ms);
   final lastfm = ref.read(lastfmServiceProvider);
@@ -134,7 +135,8 @@ final playbackProvider = ChangeNotifierProvider<PlaybackController>((ref) {
 final positionProvider = StreamProvider.autoDispose<Duration>(
     (ref) => ref.watch(audioHandlerProvider).player.positionStream);
 
-final libraryProvider = ChangeNotifierProvider<LibraryController>((ref) {
+final ChangeNotifierProvider<LibraryController> libraryProvider =
+    ChangeNotifierProvider<LibraryController>((ref) {
   final c = LibraryController(ref.read(prefsProvider));
   // Авто-скачивание лайкнутого трека, если включено в настройках.
   c.onTrackLiked = (track) {

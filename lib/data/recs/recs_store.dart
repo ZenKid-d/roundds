@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import 'recs_db.dart';
 import 'recs_dedup.dart';
