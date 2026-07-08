@@ -5,7 +5,10 @@
 //
 // Пример:
 //   export ROUNDDS_PRIV=<seed из premium_keygen.dart>
-//   dart run tool/gen_license.dart --days 30 --owner "Иван И."
+//   dart run tool/gen_license.dart --days 30 --owner "Иван И." --device <ID>
+//
+// --device привязывает код к устройству: он заработает только там, где ID
+// совпадает с показанным на экране Premium. Без --device код работает везде.
 //
 // Печатает готовый код вида RD1.<payload>.<signature> — его отправляешь
 // подписчику, он вставляет код на экране Premium.
@@ -31,9 +34,11 @@ Future<void> main(List<String> args) async {
 
   var days = 30;
   var owner = '';
+  var device = '';
   for (var i = 0; i < args.length - 1; i++) {
     if (args[i] == '--days') days = int.parse(args[i + 1]);
     if (args[i] == '--owner') owner = args[i + 1];
+    if (args[i] == '--device') device = args[i + 1];
   }
 
   final algorithm = Ed25519();
@@ -43,6 +48,7 @@ Future<void> main(List<String> args) async {
       DateTime.now().add(Duration(days: days)).millisecondsSinceEpoch ~/ 1000;
   final payload = <String, dynamic>{'v': 1, 'exp': exp};
   if (owner.isNotEmpty) payload['own'] = owner;
+  if (device.isNotEmpty) payload['dev'] = device;
 
   final message = utf8.encode(jsonEncode(payload));
   final signature = await algorithm.sign(message, keyPair: keyPair);
@@ -50,6 +56,7 @@ Future<void> main(List<String> args) async {
 
   final until = DateTime.now().add(Duration(days: days));
   stderr.writeln('Срок: $days дн. (до ${until.toIso8601String().split('T')[0]})'
-      '${owner.isEmpty ? '' : ', владелец: $owner'}');
+      '${owner.isEmpty ? '' : ', владелец: $owner'}'
+      '${device.isEmpty ? '' : ', устройство: $device'}');
   stdout.writeln(code);
 }

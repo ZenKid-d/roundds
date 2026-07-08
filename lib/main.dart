@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/downloads_controller.dart';
+import 'core/premium/device_id.dart';
 import 'core/premium/premium_controller.dart';
 import 'core/providers.dart';
 import 'core/update_service.dart';
@@ -40,7 +41,8 @@ Future<void> main() async {
     instances: prefs.getStringList('rf_instances') ?? const [],
   );
   // Premium (Boosty-коды): грузим до старта, чтобы сразу клампить качество.
-  final premium = PremiumController(const FlutterSecureStorage());
+  const secure = FlutterSecureStorage();
+  final premium = PremiumController(secure, DeviceId(secure));
   await premium.load();
   // Качество: бесплатным — максимум «Среднее» (индекс 1), Premium — как выбрано.
   final savedQuality = prefs.getInt('stream_quality') ??

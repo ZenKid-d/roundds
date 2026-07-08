@@ -47,6 +47,7 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
     final msg = switch (result) {
       RedeemResult.ok => 'Premium активирован ✓',
       RedeemResult.expired => 'Код просрочен — нужен новый',
+      RedeemResult.wrongDevice => 'Код выпущен для другого устройства',
       RedeemResult.invalid => 'Неверный код',
     };
     ScaffoldMessenger.of(context)
@@ -59,12 +60,11 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
     }
   }
 
-  Future<void> _copyCode(String code) async {
-    await Clipboard.setData(ClipboardData(text: code));
+  Future<void> _copy(String text, String toast) async {
+    await Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Код скопирован')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(toast)));
     }
   }
 
@@ -93,10 +93,10 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
           _StatusCard(premium: premium),
           if (premium.isPremium && premium.code != null) ...[
             const SizedBox(height: 12),
-            _MyCodeCard(
-              code: premium.code!,
-              expiry: premium.expiry!,
-              onCopy: () => _copyCode(premium.code!),
+            _CopyCard(
+              title: 'Мой код действует до ${fmtPremiumDate(premium.expiry!)}',
+              value: premium.code!,
+              onCopy: () => _copy(premium.code!, 'Код скопирован'),
             ),
           ],
           const SizedBox(height: 20),
@@ -138,6 +138,19 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                 foregroundColor: Colors.black,
               ),
             ),
+          ),
+          const SizedBox(height: 18),
+          _InfoRow(
+            'Код привязывается к устройству. После оплаты пришлите этот ID '
+            '— вам выпустят код именно для него. Перенос на другое устройство '
+            '— по новому ID.',
+          ),
+          const SizedBox(height: 10),
+          _CopyCard(
+            title: 'ID этого устройства',
+            value: premium.deviceId ?? '—',
+            onCopy: () =>
+                _copy(premium.deviceId ?? '', 'ID устройства скопирован'),
           ),
           const SizedBox(height: 24),
           const _SectionTitle('Активация кода'),
@@ -255,15 +268,24 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
-/// Блок «Мой код действует до … · копировать» — виден при активной подписке.
-class _MyCodeCard extends StatelessWidget {
-  const _MyCodeCard({
-    required this.code,
-    required this.expiry,
+/// Серый пояснительный абзац.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: TextStyle(fontSize: 12.5, color: AppColors.white60, height: 1.4));
+}
+
+/// Карточка «заголовок + значение + кнопка Копировать» (код / ID устройства).
+class _CopyCard extends StatelessWidget {
+  const _CopyCard({
+    required this.title,
+    required this.value,
     required this.onCopy,
   });
-  final String code;
-  final DateTime expiry;
+  final String title;
+  final String value;
   final VoidCallback onCopy;
 
   @override
@@ -280,11 +302,11 @@ class _MyCodeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Мой код действует до ${fmtPremiumDate(expiry)}',
+                Text(title,
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),
-                Text(code,
+                Text(value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style:

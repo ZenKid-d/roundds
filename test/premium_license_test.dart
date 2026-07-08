@@ -10,12 +10,24 @@ void main() {
 
   final verifier = LicenseVerifier();
 
+  // Код, привязанный к устройству "DEVICE-A" (тот же ключ, срок до 2100).
+  const deviceCode =
+      'RD1.eyJ2IjoxLCJleHAiOjQxMDI0NDQ4MDAsImRldiI6IkRFVklDRS1BIn0'
+      '.xcureHPdsxGOMabNGAhU_fvmotp5sRQorF6HNTpogMBKFH1P3FiSUDuOzsj1dQJ8eOG_Pf7SHKIxgckM0W6rBg';
+
   test('валидный код проходит проверку', () async {
     final payload = await verifier.verify(sample);
     expect(payload, isNotNull);
     expect(payload!.owner, 'Test User');
+    expect(payload.device, isNull); // не привязан — работает везде
     expect(payload.isExpired, isFalse);
     expect(payload.expiry.year, 2100);
+  });
+
+  test('код с привязкой к устройству отдаёт device', () async {
+    final payload = await verifier.verify(deviceCode);
+    expect(payload, isNotNull);
+    expect(payload!.device, 'DEVICE-A');
   });
 
   test('подделанная подпись отклоняется', () async {

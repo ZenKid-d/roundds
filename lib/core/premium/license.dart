@@ -6,13 +6,16 @@ import 'premium_config.dart';
 
 /// Данные, зашитые в подписанный Premium-код.
 class LicensePayload {
-  const LicensePayload({required this.expiry, this.owner});
+  const LicensePayload({required this.expiry, this.owner, this.device});
 
   /// Срок действия подписки.
   final DateTime expiry;
 
   /// Имя/метка владельца (мягкий антишеринг), может быть пустым.
   final String? owner;
+
+  /// ID устройства, к которому привязан код. null — код работает везде.
+  final String? device;
 
   bool get isExpired => DateTime.now().isAfter(expiry);
 }
@@ -62,9 +65,11 @@ class LicenseVerifier {
           jsonDecode(utf8.decode(payloadBytes)) as Map<String, dynamic>;
       final exp = (map['exp'] as num).toInt();
       final own = (map['own'] as String?)?.trim();
+      final dev = (map['dev'] as String?)?.trim();
       return LicensePayload(
         expiry: DateTime.fromMillisecondsSinceEpoch(exp * 1000),
         owner: (own == null || own.isEmpty) ? null : own,
+        device: (dev == null || dev.isEmpty) ? null : dev,
       );
     } catch (_) {
       return null;
