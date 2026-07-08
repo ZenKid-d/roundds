@@ -466,6 +466,19 @@ class YoutubeMusicSource implements MusicSource {
     return s.contains('requestlimit') || s.contains('rate limit');
   }
 
+  // Видео навсегда недоступно: удалено, приватно, заблокировано в регионе или
+  // помечено «Streams are not available». Ни ретрай, ни зеркала Piped не помогут
+  // — тот же бэкенд YouTube отдаёт ту же ошибку. Отличаем от троттлинга/сети,
+  // чтобы вместо пропуска трека поискать другую (рабочую) заливку.
+  static bool _isUnplayable(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('unplayable') ||
+        s.contains('unavailable') ||
+        s.contains('not available') ||
+        s.contains('requirespurchase') ||
+        s.contains('is private');
+  }
+
   // Кэш резолва по videoId — реже дёргаем YouTube/Piped (меньше шанс поймать
   // лимит) при повторах: реплей, предзагрузка, радио с возвратами. Отдаём, пока
   // ссылка не истекла. Сбрасывается при ошибке воспроизведения (evictStreamCache),
@@ -516,10 +529,69 @@ class YoutubeMusicSource implements MusicSource {
         final viaPiped = await _resolveViaPiped(track.id);
         if (viaPiped != null) return viaPiped;
       }
+      // Видео недоступно навсегда (удалено/приватно/заблокировано) — сам трек
+      // почти всегда залит и другими каналами. Ищем рабочую заливку и играем её,
+      // чтобы не пропускать песню.
+      if (_isUnplayable(e)) {
+        final alt = await _resolveAlternativeUpload(track);
+        if (alt != null) return alt;
+        // Замену не нашли — это недоступный контент, а не сбой источника.
+        Diagnostics.instance
+            .warn('yt.resolve', '${track.id} «${track.title}» недоступно: $e');
+        throw SourceException(type, 'видео недоступно');
+      }
       Diagnostics.instance
           .error('yt.resolve', '${track.id} «${track.title}»: $e');
       throw SourceException(type, 'поток недоступен ($e)');
     }
+  }
+
+  /// Ищет альтернативную заливку того же трека и резолвит её поток. Помогает,
+  /// когда конкретное видео удалено/заблокировано/приватно: та же песня обычно
+  /// есть у других каналов. Возвращает null, если рабочей замены не нашлось.
+  Future<PlayableStream?> _resolveAlternativeUpload(Track track) async {
+    final query = '${track.artist} ${track.title}'.trim();
+    if (query.isEmpty) return null;
+    List<Track> alts;
+    try {
+      alts = await search(query, limit: 5);
+    } catch (_) {
+      return null; // поиск сам упал — замену не подобрать
+    }
+    final pipedFirst = bypassEnabled || _throttled;
+    for (final alt in alts) {
+      if (alt.id == track.id) continue; // та же битая заливка — пропускаем
+      try {
+        if (pipedFirst) {
+          final viaPiped = await _resolveViaPiped(alt.id);
+          if (viaPiped != null) {
+            Diagnostics.instance.info('yt.resolve',
+                'заменили недоступное ${track.id} на ${alt.id} (Piped)');
+            return viaPiped;
+          }
+        }
+        final info = await _selectStream(alt.id);
+        if (info != null) {
+          Diagnostics.instance.info(
+              'yt.resolve', 'заменили недоступное ${track.id} на ${alt.id}');
+          return PlayableStream(
+            uri: info.url,
+            expiresAt: DateTime.now().add(const Duration(minutes: 30)),
+          );
+        }
+        if (!pipedFirst) {
+          final viaPiped = await _resolveViaPiped(alt.id);
+          if (viaPiped != null) {
+            Diagnostics.instance.info('yt.resolve',
+                'заменили недоступное ${track.id} на ${alt.id} (Piped)');
+            return viaPiped;
+          }
+        }
+      } catch (_) {
+        // Эта заливка тоже не сыграла — пробуем следующую.
+      }
+    }
+    return null;
   }
 
   /// Выбирает подходящий поток (audio-only по качеству; иначе лучший muxed).
