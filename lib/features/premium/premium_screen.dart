@@ -59,6 +59,15 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
     }
   }
 
+  Future<void> _copyCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Код скопирован')),
+      );
+    }
+  }
+
   Future<void> _unlink() async {
     await ref.read(premiumProvider).clear();
     if (mounted) {
@@ -82,6 +91,14 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           _StatusCard(premium: premium),
+          if (premium.isPremium && premium.code != null) ...[
+            const SizedBox(height: 12),
+            _MyCodeCard(
+              code: premium.code!,
+              expiry: premium.expiry!,
+              onCopy: () => _copyCode(premium.code!),
+            ),
+          ],
           const SizedBox(height: 20),
           const _SectionTitle('Что даёт Premium'),
           const _Perk(
@@ -231,6 +248,55 @@ class _StatusCard extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Блок «Мой код действует до … · копировать» — виден при активной подписке.
+class _MyCodeCard extends StatelessWidget {
+  const _MyCodeCard({
+    required this.code,
+    required this.expiry,
+    required this.onCopy,
+  });
+  final String code;
+  final DateTime expiry;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface1,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Мой код действует до ${fmtPremiumDate(expiry)}',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                Text(code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        TextStyle(fontSize: 11.5, color: AppColors.white45)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          TextButton.icon(
+            onPressed: onCopy,
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Копировать'),
           ),
         ],
       ),

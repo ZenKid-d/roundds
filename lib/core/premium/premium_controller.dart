@@ -18,6 +18,7 @@ class PremiumController extends ChangeNotifier {
   final LicenseVerifier _verifier;
 
   LicensePayload? _license;
+  String? _code;
 
   /// Premium активен только если код валиден и не просрочен.
   bool get isPremium => _license != null && !_license!.isExpired;
@@ -28,10 +29,14 @@ class PremiumController extends ChangeNotifier {
   DateTime? get expiry => _license?.expiry;
   String? get owner => _license?.owner;
 
+  /// Сырой активированный код (для «Копировать» / переноса на другое устройство).
+  String? get code => _code;
+
   /// Загрузить и перепроверить сохранённый код при старте.
   Future<void> load() async {
     final code = await _secure.read(key: _key);
     if (code == null) return;
+    _code = code;
     // Просроченный код тоже держим (покажем «истёк»), но isPremium=false.
     _license = await _verifier.verify(code);
     notifyListeners();
@@ -44,6 +49,7 @@ class PremiumController extends ChangeNotifier {
     if (payload == null) return RedeemResult.invalid;
     if (payload.isExpired) return RedeemResult.expired;
     await _secure.write(key: _key, value: trimmed);
+    _code = trimmed;
     _license = payload;
     notifyListeners();
     return RedeemResult.ok;
@@ -53,6 +59,7 @@ class PremiumController extends ChangeNotifier {
   Future<void> clear() async {
     await _secure.delete(key: _key);
     _license = null;
+    _code = null;
     notifyListeners();
   }
 }
