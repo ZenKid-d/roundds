@@ -543,12 +543,19 @@ class YoutubeMusicSource implements MusicSource {
   Future<StreamInfo?> _selectStream(String videoId) async {
     // Быстрый путь: только androidVr. Замерено — в 5–6 раз быстрее перебора
     // нескольких клиентов (~1.5с против ~14с), и ссылка играбельна: androidVr не
-    // троттлит поток, поэтому n-параметр не мешает. requireWatchPage не трогаем
-    // (по умолчанию true — нужен для расшифровки).
+    // троттлит поток, поэтому n-параметр не мешает.
+    //
+    // requireWatchPage: false — НЕ тянем страницу /watch?v=…. Именно этот GET
+    // (youtube.com/watch?...&bpctr=…) ловит RequestLimitExceededException при
+    // общем IP: он идёт с нашего адреса и легко упирается в лимит YouTube.
+    // Мобильные/TV-клиенты (androidVr и набор ниже) отдают уже расшифрованные
+    // ссылки, страница для этого не нужна; а если поток всё же потребует
+    // подписи, библиотека сама догрузит watch-page. Итог — резолв реже троттлит.
     try {
       final fast = await _yt.videos.streamsClient.getManifest(
         videoId,
         ytClients: [YoutubeApiClient.androidVr],
+        requireWatchPage: false,
       );
       final picked = _pickStream(fast);
       if (picked != null) return picked;
@@ -560,6 +567,7 @@ class YoutubeMusicSource implements MusicSource {
     final manifest = await _yt.videos.streamsClient.getManifest(
       videoId,
       ytClients: _fallbackClients,
+      requireWatchPage: false,
     );
     return _pickStream(manifest);
   }
