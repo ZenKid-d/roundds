@@ -522,30 +522,50 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
+  // Клиенты для «широкого» перебора, когда быстрый androidVr не дал поток.
+  // androidVr/android/ios всё чаще получают от YouTube playabilityStatus=ERROR
+  // «This video is not available» (VideoUnplayableException) на вполне обычных
+  // треках. tv и mediaConnect ходят как встраиваемый/медиа-клиент и обходят
+  // эти региональные/возрастные ограничения, androidMusic заточен под музыку.
+  // Порядок — от самых устойчивых к резервным; getManifest сливает потоки со
+  // всех клиентов и бросает, только если поток не дал НИ ОДИН.
+  static final List<YoutubeApiClient> _fallbackClients = [
+    YoutubeApiClient.androidVr,
+    YoutubeApiClient.tv,
+    YoutubeApiClient.mediaConnect,
+    YoutubeApiClient.androidMusic,
+    YoutubeApiClient.android,
+    YoutubeApiClient.ios,
+  ];
+
   /// Выбирает подходящий поток (audio-only по качеству; иначе лучший muxed).
   /// Общий код для проигрывания (нужен URL) и загрузки (нужен StreamInfo).
   Future<StreamInfo?> _selectStream(String videoId) async {
-    StreamManifest manifest;
+    // Быстрый путь: только androidVr. Замерено — в 5–6 раз быстрее перебора
+    // нескольких клиентов (~1.5с против ~14с), и ссылка играбельна: androidVr не
+    // троттлит поток, поэтому n-параметр не мешает. requireWatchPage не трогаем
+    // (по умолчанию true — нужен для расшифровки).
     try {
-      // Быстрый путь: только androidVr. Замерено — в 5–6 раз быстрее перебора
-      // трёх клиентов (~1.5с против ~14с), и ссылка играбельна: androidVr не
-      // троттлит поток, поэтому n-параметр не мешает. requireWatchPage не
-      // трогаем (по умолчанию true — нужен для расшифровки).
-      manifest = await _yt.videos.streamsClient.getManifest(
+      final fast = await _yt.videos.streamsClient.getManifest(
         videoId,
         ytClients: [YoutubeApiClient.androidVr],
       );
+      final picked = _pickStream(fast);
+      if (picked != null) return picked;
+      // androidVr вернул манифест без пригодного аудио — добираем широким
+      // набором (ниже), а не сдаёмся: у tv/mediaConnect дорожки могут быть.
     } catch (_) {
-      // Редкий случай (видео недоступно androidVr) — полный набор клиентов.
-      manifest = await _yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [
-          YoutubeApiClient.androidVr,
-          YoutubeApiClient.android,
-          YoutubeApiClient.ios,
-        ],
-      );
+      // androidVr отдал «видео недоступно» / упал — идём широким набором.
     }
+    final manifest = await _yt.videos.streamsClient.getManifest(
+      videoId,
+      ytClients: _fallbackClients,
+    );
+    return _pickStream(manifest);
+  }
+
+  /// Из манифеста выбирает audio-only по качеству, иначе лучший muxed.
+  StreamInfo? _pickStream(StreamManifest manifest) {
     if (manifest.audioOnly.isNotEmpty) {
       final list = manifest.audioOnly.toList()
         ..sort((a, b) =>
