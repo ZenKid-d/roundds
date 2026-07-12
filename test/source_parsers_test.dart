@@ -148,6 +148,147 @@ void main() {
       final r = renderer()..remove('playlistItemData');
       expect(YoutubeMusicSource.mrlirToTrack(r), isNull);
     });
+
+    // Когда фильтр «Songs» пуст, поиск повторяется БЕЗ него, и подпись ряда
+    // выглядит иначе: «Video • Канал • 3.2M views • 6:07». Первый ран — тип, а
+    // не артист; счётчик просмотров — не артист.
+    test('нефильтрованный ряд-видео: тип отбрасывается, артист = канал', () {
+      final r = {
+        'playlistItemData': {'videoId': 'vidUnfilt01'},
+        'flexColumns': [
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': 'Arctic Monkeys - R U Mine?'}
+                ]
+              }
+            }
+          },
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': 'Video'},
+                  {'text': ' • '},
+                  {'text': 'Domino Recording Co'},
+                  {'text': ' • '},
+                  {'text': '78M views'},
+                  {'text': ' • '},
+                  {'text': '3:44'},
+                ]
+              }
+            }
+          },
+        ],
+      };
+      final t = YoutubeMusicSource.mrlirToTrack(r)!;
+      expect(t.artist, 'Domino Recording Co');
+      expect(t.artist, isNot('Video'));
+      expect(t.duration, const Duration(seconds: 224));
+    });
+
+    test('эпизод подкаста (с videoId) отсекается по типу → null', () {
+      final r = {
+        'playlistItemData': {'videoId': 'episodeVid1'},
+        'flexColumns': [
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': 'Some Podcast Episode'}
+                ]
+              }
+            }
+          },
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': 'Episode'},
+                  {'text': ' • '},
+                  {'text': 'Jun 28'},
+                ]
+              }
+            }
+          },
+        ],
+      };
+      expect(YoutubeMusicSource.mrlirToTrack(r), isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.cardShelfToTrack (Top result)', () {
+    test('официальный трек из карточки: id/title/artist/duration', () {
+      final t = YoutubeMusicSource.cardShelfToTrack({
+        'thumbnail': {
+          'musicThumbnailRenderer': {
+            'thumbnail': {
+              'thumbnails': [
+                {'url': 'https://i.ytimg.com/vi/VQH8ZTgna3Q/hqdefault.jpg'}
+              ]
+            }
+          }
+        },
+        'title': {
+          'runs': [
+            {
+              'text': 'R U Mine?',
+              'navigationEndpoint': {
+                'watchEndpoint': {'videoId': 'VQH8ZTgna3Q'}
+              }
+            }
+          ]
+        },
+        'subtitle': {
+          'runs': [
+            {'text': 'Video'},
+            {'text': ' • '},
+            {'text': 'Arctic Monkeys'},
+            {'text': ' • '},
+            {'text': '224M views'},
+            {'text': ' • '},
+            {'text': '3:44'},
+          ]
+        },
+      })!;
+      expect(t.id, 'VQH8ZTgna3Q');
+      expect(t.title, 'R U Mine?');
+      expect(t.artist, 'Arctic Monkeys');
+      expect(t.duration, const Duration(seconds: 224));
+    });
+
+    test('нет videoId в title → null', () {
+      expect(
+          YoutubeMusicSource.cardShelfToTrack({
+            'title': {
+              'runs': [
+                {'text': 'No Endpoint'}
+              ]
+            }
+          }),
+          isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.metaFromRuns', () {
+    test('формат «Songs» (без типа): артист + длительность', () {
+      final m = YoutubeMusicSource.metaFromRuns([
+        {'text': 'Arctic Monkeys'},
+        {'text': ' • '},
+        {'text': 'AM'},
+        {'text': ' • '},
+        {'text': '3:44'},
+      ]);
+      expect(m.type, isNull);
+      expect(m.artist, 'Arctic Monkeys');
+      expect(m.duration, const Duration(seconds: 224));
+    });
+    test('пустой ряд → артист YouTube, длительность null', () {
+      final m = YoutubeMusicSource.metaFromRuns(const []);
+      expect(m.artist, 'YouTube');
+      expect(m.duration, isNull);
+    });
   });
 
   group('YoutubeMusicSource.panelToTrack (радио/next)', () {

@@ -319,6 +319,19 @@ class YoutubeMusicSource implements MusicSource {
   Future<List<Track>> _musicSearch(String query, {int limit = 20}) async {
     await _ensureMusicKeys();
     if (_musicKey == null) return const [];
+    // Сначала строгий фильтр «Songs» — только лицензионные треки с чистой
+    // атрибуцией. Но YouTube периодически ломает токен фильтра или не отдаёт
+    // «песни» для части регионов/без входа — тогда ответ пустой («No results»),
+    // и раньше поиск молча падал в обычный видео-поиск, полный каверов. Если
+    // фильтр пуст — повторяем БЕЗ него и разбираем «Top result» + музыкальные
+    // видео, чтобы официальный релиз всё равно нашёлся.
+    final songs = await _musicSearchRequest(query, limit: limit, songs: true);
+    if (songs.isNotEmpty) return songs;
+    return _musicSearchRequest(query, limit: limit, songs: false);
+  }
+
+  Future<List<Track>> _musicSearchRequest(String query,
+      {required int limit, required bool songs}) async {
     final resp = await _dio.post(
       'https://music.youtube.com/youtubei/v1/search',
       queryParameters: {'key': _musicKey},
@@ -332,7 +345,7 @@ class YoutubeMusicSource implements MusicSource {
           }
         },
         'query': query,
-        'params': _songsParam,
+        if (songs) 'params': _songsParam,
       },
       options: Options(headers: {
         'User-Agent': _ua,
@@ -346,6 +359,13 @@ class YoutubeMusicSource implements MusicSource {
     void walk(dynamic n) {
       if (out.length >= limit) return;
       if (n is Map) {
+        // «Top result» — самый релевантный трек (часто именно официальный),
+        // лежит в карточке, а не в списке; парсер списка её пропускал.
+        final card = n['musicCardShelfRenderer'];
+        if (card is Map) {
+          final t = cardShelfToTrack(card);
+          if (t != null && seen.add(t.id)) out.add(t);
+        }
         final r = n['musicResponsiveListItemRenderer'];
         if (r is Map) {
           final t = mrlirToTrack(r);
@@ -363,6 +383,95 @@ class YoutubeMusicSource implements MusicSource {
 
     walk(resp.data);
     return out;
+  }
+
+  // Типы элементов в подписи нефильтрованной выдачи YT Music (первый ран):
+  // «Song»/«Video» — музыка, оставляем; «Episode»/«Podcast»/«Profile»/«Show»
+  // — не музыка (но с videoId), отсекаем.
+  static const _rowTypes = {
+    'song', 'video', 'artist', 'album', 'single', 'ep', 'playlist',
+    'episode', 'profile', 'podcast', 'show',
+  };
+  static const _skipTypes = {'episode', 'podcast', 'profile', 'show'};
+
+  static bool _looksLikeStat(String s) {
+    final l = s.toLowerCase();
+    return l.contains('view') ||
+        l.contains('monthly') ||
+        l.contains('plays') ||
+        l.contains('subscriber');
+  }
+
+  /// Разбирает ряд подписи под названием в (тип, артист, длительность).
+  /// Фильтр «Songs» даёт «Артист • Альбом • 3:21» (типа нет), а нефильтрованная
+  /// выдача — «Video • Канал • 3.2M views • 6:07»: первый ран это ТИП элемента,
+  /// и раньше он ошибочно попадал в артиста («Video»). Разделители « • » и
+  /// счётчики просмотров/аудитории пропускаем.
+  @visibleForTesting
+  static ({String? type, String artist, Duration? duration}) metaFromRuns(
+      List runs) {
+    final texts = <String>[];
+    for (final run in runs) {
+      final t = (dig(run, ['text']) ?? '').toString().trim();
+      if (t.isEmpty || t == '•') continue;
+      texts.add(t);
+    }
+    Duration? duration;
+    for (final t in texts) {
+      final d = parseClockDuration(t);
+      if (d != null) duration = d;
+    }
+    String? type;
+    var i = 0;
+    if (texts.isNotEmpty && _rowTypes.contains(texts.first.toLowerCase())) {
+      type = texts.first.toLowerCase();
+      i = 1;
+    }
+    var artist = 'YouTube';
+    for (; i < texts.length; i++) {
+      final t = texts[i];
+      if (parseClockDuration(t) != null || _looksLikeStat(t)) continue;
+      artist = t;
+      break;
+    }
+    return (type: type, artist: artist, duration: duration);
+  }
+
+  /// «Top result» YT Music — самый релевантный результат (обычно официальный
+  /// трек/клип). Лежит в отдельной карточке, а не в списке, поэтому раньше
+  /// терялся, а в выдаче оставались только каверы из списка. Название и videoId
+  /// — в title.runs, артист/длительность — в subtitle.runs.
+  @visibleForTesting
+  static Track? cardShelfToTrack(Map card) {
+    final titleRun = dig(card, ['title', 'runs', 0]);
+    final videoId =
+        dig(titleRun, ['navigationEndpoint', 'watchEndpoint', 'videoId'])
+            as String?;
+    final title = dig(titleRun, ['text']) as String?;
+    if (videoId == null || title == null) return null;
+    final subruns = dig(card, ['subtitle', 'runs']);
+    final meta = metaFromRuns(subruns is List ? subruns : const []);
+    var artist = meta.artist;
+    const topic = ' - Topic';
+    if (artist.endsWith(topic)) {
+      artist = artist.substring(0, artist.length - topic.length);
+    }
+    String? art;
+    final thumbs = dig(card,
+        ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
+    if (thumbs is List && thumbs.isNotEmpty) {
+      final url = dig(thumbs.last, ['url'])?.toString();
+      art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w720-h720');
+    }
+    art ??= ytArtwork(videoId);
+    return Track(
+      id: videoId,
+      title: title,
+      artist: artist,
+      artworkUrl: art,
+      duration: meta.duration,
+      source: SourceType.youtube,
+    );
   }
 
   /// Разбирает musicResponsiveListItemRenderer в Track.
@@ -400,8 +509,6 @@ class YoutubeMusicSource implements MusicSource {
     ]) as String?;
     if (videoId == null || title == null) return null;
 
-    var artist = 'YouTube';
-    Duration? duration;
     final runs = dig(r, [
       'flexColumns',
       1,
@@ -409,10 +516,12 @@ class YoutubeMusicSource implements MusicSource {
       'text',
       'runs'
     ]);
-    if (runs is List && runs.isNotEmpty) {
-      artist = (dig(runs.first, ['text']) ?? 'YouTube').toString();
-      duration = parseClockDuration(dig(runs.last, ['text'])?.toString());
-    }
+    final meta = metaFromRuns(runs is List ? runs : const []);
+    // Нефильтрованная выдача мешает песни/видео с эпизодами подкастов и
+    // профилями — у них тоже есть videoId, но это не музыка. Отсекаем по типу.
+    if (_skipTypes.contains(meta.type)) return null;
+    var artist = meta.artist;
+    final duration = meta.duration;
     const topic = ' - Topic';
     if (artist.endsWith(topic)) {
       artist = artist.substring(0, artist.length - topic.length);
