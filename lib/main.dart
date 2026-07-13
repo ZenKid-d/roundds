@@ -32,11 +32,6 @@ Future<void> main() async {
   // Чистим оставшиеся после обновления APK из кэша.
   unawaited(UpdateService(dio).cleanupApks());
   final youtube = YoutubeMusicSource(dio);
-  // Обход блокировок (РФ): включённость и свои зеркала.
-  youtube.configureBypass(
-    enabled: prefs.getBool('rf_bypass') ?? false,
-    instances: prefs.getStringList('rf_instances') ?? const [],
-  );
   youtube.streamQuality = prefs.getInt('stream_quality') ??
       ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
   final soundcloud =

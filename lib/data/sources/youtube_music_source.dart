@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -30,162 +29,8 @@ class YoutubeMusicSource implements MusicSource {
   static const _minSec = 45;
   static const _maxSec = 720;
 
-  // --- Обход блокировок (РФ): поиск/поток/радио через зеркала Piped ---
-  // Зеркало отдаёт ссылку на поток уже через свой сервер, поэтому плеер играет
-  // без VPN, если зеркало доступно. Свои зеркала (свой сервер) — в приоритете.
-
-  bool bypassEnabled = false;
-  final List<String> _userInstances = [];
-
   /// Качество потока/загрузки: 0 — низкое, 1 — среднее, 2 — высокое.
   int streamQuality = 2;
-
-  static const List<String> _defaultInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.adminforge.de',
-    'https://pipedapi.leptons.xyz',
-    'https://pipedapi.reallyaweso.me',
-    'https://api.piped.private.coffee',
-    'https://pipedapi.nosebs.ru',
-  ];
-
-  /// Настраивает обход: вкл/выкл и список своих зеркал (в приоритете).
-  void configureBypass({required bool enabled, List<String>? instances}) {
-    bypassEnabled = enabled;
-    if (instances != null) {
-      _userInstances
-        ..clear()
-        ..addAll(instances
-            .map((e) => e.trim().replaceAll(RegExp(r'/+$'), ''))
-            .where((e) => e.isNotEmpty));
-    }
-  }
-
-  List<String> get userInstances => List.unmodifiable(_userInstances);
-
-  // --- Здоровье Piped-зеркал: держимся рабочего, обходим недавно упавшие ---
-  String? _goodInstance;
-  final Map<String, DateTime> _deadUntil = {};
-  static const _instanceCooldown = Duration(minutes: 5);
-
-  // Порядок обхода: рабочее зеркало → живые → недавно упавшие (крайний резерв).
-  // Свои зеркала в приоритете над встроенными в пределах каждой группы.
-  List<String> _instances() {
-    final all = [..._userInstances, ..._defaultInstances];
-    final now = DateTime.now();
-    bool alive(String b) {
-      final d = _deadUntil[b];
-      return d == null || now.isAfter(d);
-    }
-
-    final good = _goodInstance;
-    final goodOk = good != null && all.contains(good) && alive(good);
-    return [
-      if (goodOk) good,
-      ...all.where((b) => b != good && alive(b)),
-      ...all.where((b) => b != good && !alive(b)),
-    ];
-  }
-
-  void _markInstanceOk(String base) {
-    _goodInstance = base;
-    _deadUntil.remove(base);
-  }
-
-  void _markInstanceDead(String base) {
-    _deadUntil[base] = DateTime.now().add(_instanceCooldown);
-    if (_goodInstance == base) _goodInstance = null;
-  }
-
-  // Зеркала опрашиваем не по одному (медленно, если первые лежат — каждое ждёт
-  // таймаут), а группами по [_pipedBatch] параллельно: берём первый успех.
-  static const _pipedBatch = 3;
-
-  /// Первый НЕ-null результат из группы (остальные игнорируются); null — если
-  /// все вернули null. Ожидает, что фьючерсы не бросают (ловят ошибки внутри).
-  Future<T?> _firstNonNull<T>(List<Future<T?>> futures) {
-    if (futures.isEmpty) return Future<T?>.value(null);
-    final completer = Completer<T?>();
-    var remaining = futures.length;
-    for (final f in futures) {
-      f.then((v) {
-        if (completer.isCompleted) return;
-        if (v != null) {
-          completer.complete(v);
-        } else if (--remaining == 0) {
-          completer.complete(null);
-        }
-      });
-    }
-    return completer.future;
-  }
-
-  /// Прогоняет [items] через [attempt] группами по [_pipedBatch], возвращает
-  /// первый успех (не-null) или null.
-  Future<T?> _raceInstances<T>(
-      List<String> items, Future<T?> Function(String) attempt) async {
-    for (var i = 0; i < items.length; i += _pipedBatch) {
-      final group = items.skip(i).take(_pipedBatch).map(attempt).toList();
-      final r = await _firstNonNull(group);
-      if (r != null) return r;
-    }
-    return null;
-  }
-
-  @visibleForTesting
-  static Track? pipedItemToTrack(Map it) {
-    final url = it['url'] as String?; // '/watch?v=ID'
-    if (url == null) return null;
-    final id = RegExp(r'v=([A-Za-z0-9_-]{11})').firstMatch(url)?.group(1);
-    if (id == null) return null;
-    var artist = (it['uploaderName'] ?? 'YouTube').toString();
-    const topic = ' - Topic';
-    if (artist.endsWith(topic)) {
-      artist = artist.substring(0, artist.length - topic.length);
-    }
-    final dur = it['duration'];
-    final duration = (dur is int && dur > 0) ? Duration(seconds: dur) : null;
-    final thumb = it['thumbnail'] as String?;
-    return Track(
-      id: id,
-      title: (it['title'] ?? '').toString(),
-      artist: artist,
-      // Обложку берём с зеркала (грузится без обхода), иначе превью YouTube.
-      artworkUrl: (thumb != null && thumb.isNotEmpty) ? thumb : ytArtwork(id),
-      duration: duration,
-      source: SourceType.youtube,
-    );
-  }
-
-  Future<List<Track>> _pipedSearch(String query, {int limit = 20}) async {
-    final r = await _raceInstances(
-        _instances(), (base) => _pipedSearchOn(base, query, limit));
-    return r ?? const [];
-  }
-
-  Future<List<Track>?> _pipedSearchOn(
-      String base, String query, int limit) async {
-    try {
-      final r = await _dio.get('$base/search',
-          queryParameters: {'q': query, 'filter': 'music_songs'},
-          options: Options(receiveTimeout: const Duration(seconds: 12)));
-      final items = (r.data['items'] as List?) ?? [];
-      final out = <Track>[];
-      final seen = <String>{};
-      for (final it in items) {
-        if (it is! Map) continue;
-        final t = pipedItemToTrack(it);
-        if (t != null && seen.add(t.id)) out.add(t);
-        if (out.length >= limit) break;
-      }
-      if (out.isEmpty) return null;
-      _markInstanceOk(base);
-      return out;
-    } catch (_) {
-      _markInstanceDead(base);
-      return null;
-    }
-  }
 
   /// Достоверный музыкальный признак канала-загрузчика: авто-канал YouTube
   /// «<Артист> - Topic» (Art Track лицензированной музыки) или VEVO. Без
@@ -196,75 +41,6 @@ class YoutubeMusicSource implements MusicSource {
     return u.contains('- topic') || u.contains('vevo');
   }
 
-  /// Музыкальный ли это связанный стрим, а не обычное видео. Иначе отсекаем: в
-  /// похожие не должны лезть влоги/миксы/подкасты/стримы/шортсы. Если строгий
-  /// фильтр опустошит related, вызывающий [relatedTo] в режиме обхода падает
-  /// назад на InnerTube music-radio.
-  static bool _isMusicStream(Map it) =>
-      isMusicUploader(it['uploaderName']?.toString());
-
-  Future<List<Track>> _pipedRelated(String videoId, {int limit = 40}) async {
-    final r = await _raceInstances(
-        _instances(), (base) => _pipedRelatedOn(base, videoId, limit));
-    return r ?? const [];
-  }
-
-  Future<List<Track>?> _pipedRelatedOn(
-      String base, String videoId, int limit) async {
-    try {
-      final r = await _dio.get('$base/streams/$videoId',
-          options: Options(receiveTimeout: const Duration(seconds: 12)));
-      final items = (r.data['relatedStreams'] as List?) ?? [];
-      final out = <Track>[];
-      final seen = <String>{videoId};
-      for (final it in items) {
-        if (it is! Map) continue;
-        if (it['type'] != null && it['type'] != 'stream') continue;
-        if (!_isMusicStream(it)) continue; // только музыка, не обычные видео
-        final t = pipedItemToTrack(it);
-        if (t != null && seen.add(t.id)) out.add(t);
-        if (out.length >= limit) break;
-      }
-      if (out.isEmpty) return null;
-      _markInstanceOk(base);
-      return out;
-    } catch (_) {
-      _markInstanceDead(base);
-      return null;
-    }
-  }
-
-  Future<PlayableStream?> _resolveViaPiped(String videoId) =>
-      _raceInstances(_instances(), (base) => _pipedResolveOn(base, videoId));
-
-  Future<PlayableStream?> _pipedResolveOn(String base, String videoId) async {
-    try {
-      final r = await _dio.get('$base/streams/$videoId',
-          options: Options(receiveTimeout: const Duration(seconds: 12)));
-      final audio = (r.data['audioStreams'] as List?) ?? [];
-      if (audio.isEmpty) return null;
-      // По убыванию битрейта; выбираем по качеству.
-      audio.sort((a, b) =>
-          ((b['bitrate'] ?? 0) as num).compareTo((a['bitrate'] ?? 0) as num));
-      final chosen = (streamQuality == 0
-          ? audio.last
-          : streamQuality == 1
-              ? audio[audio.length ~/ 2]
-              : audio.first) as Map;
-      final url = chosen['url'] as String?;
-      if (url == null || url.isEmpty) return null;
-      _markInstanceOk(base);
-      return PlayableStream(
-        uri: Uri.parse(url),
-        expiresAt: DateTime.now().add(const Duration(hours: 3)),
-      );
-    } catch (e) {
-      Diagnostics.instance.warn('yt.piped', 'resolve @$base: $e');
-      _markInstanceDead(base);
-      return null;
-    }
-  }
-
   @override
   SourceType get type => SourceType.youtube;
 
@@ -273,11 +49,6 @@ class YoutubeMusicSource implements MusicSource {
 
   @override
   Future<List<Track>> search(String query, {int limit = 20}) async {
-    // В режиме обхода (РФ) сначала ищем через зеркало Piped.
-    if (bypassEnabled) {
-      final viaPiped = await _pipedSearch(query, limit: limit);
-      if (viaPiped.isNotEmpty) return viaPiped;
-    }
     // Приоритет — поиск YouTube Music (фильтр «Songs»): только музыка, с
     // квадратными обложками альбомов. Если он недоступен — обычный поиск
     // YouTube с фильтром по длительности.
@@ -561,7 +332,6 @@ class YoutubeMusicSource implements MusicSource {
     final per = (limit / seeds.length).ceil();
     for (final s in seeds) {
       try {
-        // Через search(): в режиме обхода источник — зеркало Piped.
         out.addAll(await search(s, limit: per));
       } catch (_) {/* пропускаем неудачный сид */}
       if (out.length >= limit) break;
@@ -569,19 +339,7 @@ class YoutubeMusicSource implements MusicSource {
     return out.take(limit).toList();
   }
 
-  // После троттлинга YouTube (RequestLimitExceededException) на некоторое время
-  // резолвим сразу через Piped, не тратя попытку на заведомо лимитированный
-  // прямой путь. Актуально при общем VPN-IP, когда лимит ловит много треков.
-  DateTime? _throttledUntil;
-  bool get _throttled =>
-      _throttledUntil != null && DateTime.now().isBefore(_throttledUntil!);
-
-  static bool _isRateLimit(Object e) {
-    final s = e.toString().toLowerCase();
-    return s.contains('requestlimit') || s.contains('rate limit');
-  }
-
-  // Кэш резолва по videoId — реже дёргаем YouTube/Piped (меньше шанс поймать
+  // Кэш резолва по videoId — реже дёргаем YouTube (меньше шанс поймать
   // лимит) при повторах: реплей, предзагрузка, радио с возвратами. Отдаём, пока
   // ссылка не истекла. Сбрасывается при ошибке воспроизведения (evictStreamCache),
   // чтобы авто-перерезолв в плеере всегда брал свежую ссылку, а не битую из кэша.
@@ -602,14 +360,6 @@ class YoutubeMusicSource implements MusicSource {
   }
 
   Future<PlayableStream> _resolveStreamUncached(Track track) async {
-    // Piped-first: в режиме обхода (РФ) или после недавнего троттлинга. Зеркала
-    // проксируют поток через свои серверы и не упираются в лимит нашего IP.
-    final pipedFirst = bypassEnabled || _throttled;
-    if (pipedFirst) {
-      final viaPiped = await _resolveViaPiped(track.id);
-      if (viaPiped != null) return viaPiped;
-      // Зеркала не смогли — пробуем напрямую (вдруг сработает).
-    }
     try {
       final info = await _selectStream(track.id);
       if (info == null) {
@@ -620,17 +370,6 @@ class YoutubeMusicSource implements MusicSource {
         expiresAt: DateTime.now().add(const Duration(minutes: 30)),
       );
     } catch (e) {
-      // Троттлинг — запоминаем, чтобы следующие треки шли сразу через Piped.
-      if (_isRateLimit(e)) {
-        _throttledUntil = DateTime.now().add(const Duration(minutes: 10));
-        Diagnostics.instance
-            .warn('yt.throttle', 'rate-limit, 10 мин через Piped ($e)');
-      }
-      // Если Piped ещё не пробовали выше — пробуем сейчас.
-      if (!pipedFirst) {
-        final viaPiped = await _resolveViaPiped(track.id);
-        if (viaPiped != null) return viaPiped;
-      }
       Diagnostics.instance
           .error('yt.resolve', '${track.id} «${track.title}»: $e');
       throw SourceException(type, 'поток недоступен ($e)');
@@ -714,10 +453,6 @@ class YoutubeMusicSource implements MusicSource {
     String path, {
     void Function(int received, int total)? onProgress,
   }) async {
-    // В режиме обхода (РФ) или при троттлинге поток идёт через Piped — там
-    // обычный файл, качаем его по URL через dio (общий путь). Нативный
-    // youtube_explode-клиент тут не годится (упрётся в тот же лимит).
-    if (bypassEnabled || _throttled) return false;
     IOSink? sink;
     try {
       final info = await _selectStream(track.id);
@@ -734,11 +469,7 @@ class YoutubeMusicSource implements MusicSource {
       await sink.close();
       sink = null;
       return true;
-    } catch (e) {
-      // Троттлинг — запомним, чтобы следующие резолвы шли через Piped.
-      if (_isRateLimit(e)) {
-        _throttledUntil = DateTime.now().add(const Duration(minutes: 10));
-      }
+    } catch (_) {
       // Не смогли — подчистим частичный файл и отдадим управление dio-пути.
       try {
         await sink?.close();
@@ -754,11 +485,6 @@ class YoutubeMusicSource implements MusicSource {
   /// Похожие треки (радио) для YouTube-трека через InnerTube `next`. Это
   /// настоящая авто-очередь YouTube Music, а не подбор по артисту.
   Future<List<Track>> relatedTo(String videoId, {int limit = 40}) async {
-    // В режиме обхода (РФ) похожие берём из relatedStreams зеркала Piped.
-    if (bypassEnabled) {
-      final viaPiped = await _pipedRelated(videoId, limit: limit);
-      if (viaPiped.isNotEmpty) return viaPiped;
-    }
     await _ensureMusicKeys();
     if (_musicKey == null) return const [];
     final resp = await _dio.post(
@@ -808,7 +534,7 @@ class YoutubeMusicSource implements MusicSource {
     walk(resp.data);
     // InnerTube-радио изредка подмешивает не-треки (шортсы/длинные миксы) —
     // чистим по окну длительности музыкального трека (покрывает и «Волну»,
-    // и ряды «Похожее»). Piped-ветка выше уже строгая через _isMusicStream.
+    // и ряды «Похожее»).
     return out.where(_looksLikeTrack).toList();
   }
 

@@ -82,38 +82,6 @@ void main() {
     });
   });
 
-  group('YoutubeMusicSource.pipedItemToTrack', () {
-    test('happy path + снятие « - Topic»', () {
-      final t = YoutubeMusicSource.pipedItemToTrack({
-        'url': '/watch?v=abcdefghijk',
-        'uploaderName': 'Some Artist - Topic',
-        'duration': 200,
-        'thumbnail': 'https://thumb/x.jpg',
-        'title': 'Cool Song',
-      })!;
-      expect(t.id, 'abcdefghijk');
-      expect(t.title, 'Cool Song');
-      expect(t.artist, 'Some Artist');
-      expect(t.duration, const Duration(seconds: 200));
-      expect(t.artworkUrl, 'https://thumb/x.jpg');
-      expect(t.source, SourceType.youtube);
-    });
-    test('нет thumbnail → превью YouTube по id', () {
-      final t = YoutubeMusicSource.pipedItemToTrack({
-        'url': '/watch?v=abcdefghijk',
-        'title': 'T',
-      })!;
-      expect(t.artworkUrl, YoutubeMusicSource.ytArtwork('abcdefghijk'));
-    });
-    test('нет url → null', () {
-      expect(YoutubeMusicSource.pipedItemToTrack({'title': 'x'}), isNull);
-    });
-    test('url без videoId → null', () {
-      expect(YoutubeMusicSource.pipedItemToTrack({'url': '/watch?foo=1'}),
-          isNull);
-    });
-  });
-
   group('YoutubeMusicSource.mrlirToTrack (YT Music «Songs»)', () {
     Map<String, dynamic> renderer() => {
           'playlistItemData': {'videoId': 'vid12345678'},
