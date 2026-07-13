@@ -94,6 +94,13 @@ class RoundsAudioHandler extends BaseAudioHandler {
   // Предзагрузка следующего трека.
   String? _preUid;
   PlayableStream? _preStream;
+  SourceType? _preVia; // источник-подмена предзагруженного потока (если была)
+
+  // Источник, который РЕАЛЬНО отдаёт поток текущего трека, если он отличается
+  // от родного (межисточниковый фолбэк). null — играет из своего источника.
+  // Для видимой пометки «через <сервис>» в плеере.
+  SourceType? _playingVia;
+  SourceType? get playingVia => _playingVia;
 
   // Авто-восстановление при обрыве протухшего потока во время игры.
   bool _recovering = false;
@@ -168,6 +175,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     if (track == null) return;
     final gen = ++_loadGen;
     _loading = true;
+    _playingVia = null;
     _notify();
     mediaItem.add(_toMediaItem(track));
     try {
@@ -176,9 +184,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
       if (local != null) {
         src = AudioSource.uri(Uri.file(local));
       } else {
-        final stream = await _aggregator.resolveStreamWithFallback(track);
+        final r = await _aggregator.resolveWithSource(track);
         if (gen != _loadGen) return; // обогнали ручным тапом по треку
-        src = AudioSource.uri(stream.uri, headers: stream.headers);
+        _playingVia = r.track.source == track.source ? null : r.track.source;
+        src = AudioSource.uri(r.stream.uri, headers: r.stream.headers);
       }
       if (gen != _loadGen) return;
       // initialPosition — стартовая позиция без play(): трек ждёт на паузе.
@@ -311,6 +320,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final gen = ++_loadGen;
     _loading = true;
     _error = null;
+    _playingVia = null; // до резолва считаем, что играет из своего источника
     _notify();
     mediaItem.add(_toMediaItem(track));
     onTrackStarted?.call(track);
@@ -329,6 +339,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
         }
         final local = localFileResolver?.call(track.uid);
         if (local != null) {
+          _playingVia = null;
           await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
         } else {
           PlayableStream stream;
@@ -337,12 +348,17 @@ class RoundsAudioHandler extends BaseAudioHandler {
               _preStream != null &&
               !_preStream!.isExpired) {
             stream = _preStream!;
+            _playingVia = _preVia; // via, посчитанное при предзагрузке
           } else {
-            stream = await _aggregator.resolveStreamWithFallback(track);
+            final r = await _aggregator.resolveWithSource(track);
+            stream = r.stream;
+            _playingVia =
+                r.track.source == track.source ? null : r.track.source;
           }
           if (gen != _loadGen) return;
           _preUid = null;
           _preStream = null;
+          _preVia = null;
           await _player.setAudioSource(
             AudioSource.uri(stream.uri, headers: stream.headers),
           );
@@ -428,6 +444,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final pos = _player.position; // вернёмся на то же место после перерезолва
     _preUid = null; // возможно-протухшая предзагрузка больше не годится
     _preStream = null;
+    _preVia = null;
     _aggregator.evictStreamCache(track); // не отдать битую ссылку из кэша
     try {
       try {
@@ -480,25 +497,33 @@ class RoundsAudioHandler extends BaseAudioHandler {
     if (localFileResolver?.call(next.uid) != null) return;
     if (_preUid == next.uid) return;
     try {
-      final s = await _aggregator.resolveStreamWithFallback(next);
+      final r = await _aggregator.resolveWithSource(next);
       _preUid = next.uid;
-      _preStream = s;
+      _preStream = r.stream;
+      _preVia = r.track.source == next.source ? null : r.track.source;
     } catch (_) {/* не критично */}
   }
 
   // --- Бесшовное воспроизведение (эксперим.) ---
 
-  Future<AudioSource> _sourceForTrack(Track t) async {
+  // markVia: пометить, из какого источника реально играет ТЕКУЩИЙ трек (для
+  // pill «через <сервис>»). Для gapless-предзагрузки следующего — false.
+  Future<AudioSource> _sourceForTrack(Track t, {bool markVia = false}) async {
     final local = localFileResolver?.call(t.uid);
-    if (local != null) return AudioSource.uri(Uri.file(local));
-    final s = await _aggregator.resolveStreamWithFallback(t);
-    return AudioSource.uri(s.uri, headers: s.headers);
+    if (local != null) {
+      if (markVia) _playingVia = null;
+      return AudioSource.uri(Uri.file(local));
+    }
+    final r = await _aggregator.resolveWithSource(t);
+    if (markVia) _playingVia = r.track.source == t.source ? null : r.track.source;
+    return AudioSource.uri(r.stream.uri, headers: r.stream.headers);
   }
 
   Future<void> _loadGapless(Track track, {bool autoSkipOnError = true}) async {
     final gen = ++_loadGen;
     _loading = true;
     _error = null;
+    _playingVia = null; // до резолва считаем, что играет из своего источника
     _notify();
     mediaItem.add(_toMediaItem(track));
     onTrackStarted?.call(track);
@@ -517,7 +542,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
           } catch (_) {}
           if (gen != _loadGen) return;
         }
-        final src = await _sourceForTrack(track);
+        final src = await _sourceForTrack(track, markVia: true);
         if (gen != _loadGen) return;
         final concat = ConcatenatingAudioSource(children: [src]);
         _concat = concat;

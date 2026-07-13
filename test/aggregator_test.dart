@@ -95,9 +95,16 @@ void main() {
   });
 
   group('Aggregator.resolveStreamWithFallback', () {
-    test('падение родного источника → фолбэк на YouTube', () async {
-      final yt = FakeSource(SourceType.youtube,
-          results: [track(SourceType.youtube, 'ytid')]);
+    test('падение родного источника → фолбэк на YouTube (та же песня)', () async {
+      // YouTube-результат — ТА ЖЕ песня (артист+название), иначе подмену
+      // отсекает проверка совпадения (не играем чужой трек).
+      final yt = FakeSource(SourceType.youtube, results: [
+        const Track(
+            id: 'ytid',
+            title: 'sc1',
+            artist: 'artist-sc1',
+            source: SourceType.youtube),
+      ]);
       final sc = FakeSource(SourceType.soundcloud, throwOnResolve: true);
       final agg = Aggregator(
         {SourceType.youtube: yt, SourceType.soundcloud: sc},
@@ -107,6 +114,23 @@ void main() {
       final stream =
           await agg.resolveStreamWithFallback(track(SourceType.soundcloud, 'sc1'));
       expect(stream.uri.toString(), contains('ytid'));
+    });
+
+    test('фолбэк не подставляет чужую песню → пробрасывает ошибку', () async {
+      // YouTube нашёл лишь посторонний трек — совпадения нет, подмены быть не
+      // должно, исходная ошибка родного источника пробрасывается.
+      final yt = FakeSource(SourceType.youtube,
+          results: [track(SourceType.youtube, 'ytid')]);
+      final sc = FakeSource(SourceType.soundcloud, throwOnResolve: true);
+      final agg = Aggregator(
+        {SourceType.youtube: yt, SourceType.soundcloud: sc},
+        enabled: {SourceType.youtube, SourceType.soundcloud},
+      );
+
+      await expectLater(
+        agg.resolveStreamWithFallback(track(SourceType.soundcloud, 'sc1')),
+        throwsA(isA<Exception>()),
+      );
     });
 
     test('без включённого YouTube фолбэка нет — пробрасываем ошибку', () async {
@@ -127,8 +151,13 @@ void main() {
 
   group('Aggregator.youtubeMatch', () {
     test('находит ту же песню на YouTube для не-YT источника', () async {
-      final yt = FakeSource(SourceType.youtube,
-          results: [track(SourceType.youtube, 'ytid')]);
+      final yt = FakeSource(SourceType.youtube, results: [
+        const Track(
+            id: 'ytid',
+            title: 'sc1',
+            artist: 'artist-sc1',
+            source: SourceType.youtube),
+      ]);
       final sc = FakeSource(SourceType.soundcloud);
       final agg = Aggregator(
         {SourceType.youtube: yt, SourceType.soundcloud: sc},
@@ -137,6 +166,18 @@ void main() {
 
       final m = await agg.youtubeMatch(track(SourceType.soundcloud, 'sc1'));
       expect(m?.uid, 'youtube:ytid');
+    });
+
+    test('на YouTube лишь чужой трек → null (не подставляем)', () async {
+      final yt = FakeSource(SourceType.youtube,
+          results: [track(SourceType.youtube, 'ytid')]);
+      final sc = FakeSource(SourceType.soundcloud);
+      final agg = Aggregator(
+        {SourceType.youtube: yt, SourceType.soundcloud: sc},
+        enabled: {SourceType.youtube, SourceType.soundcloud},
+      );
+
+      expect(await agg.youtubeMatch(track(SourceType.soundcloud, 'sc1')), isNull);
     });
 
     test('для YouTube-трека возвращает его же', () async {

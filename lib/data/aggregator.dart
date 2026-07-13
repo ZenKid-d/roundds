@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 import '../core/diagnostics.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import '../domain/music_source.dart';
+import 'recs/recs_dedup.dart';
 import 'sources/yandex_source.dart';
 import 'sources/youtube_music_source.dart';
 
@@ -124,43 +127,79 @@ class Aggregator {
     if (s is YoutubeMusicSource) s.evictStreamCache(track.id);
   }
 
-  /// Ищет ту же песню на YouTube (для фолбэка загрузки/воспроизведения, когда
-  /// родной источник отдаёт HLS или недоступен). null — YouTube выключен/не
-  /// нашёл. Для YouTube-трека возвращает его же.
+  /// Ищет ту же песню на YouTube (для фолбэка загрузки, когда родной источник
+  /// отдаёт HLS или недоступен). null — YouTube выключен/не нашёл. Для
+  /// YouTube-трека возвращает его же. Совпадение проверяем строго ([_pickMatch]),
+  /// чтобы не подсунуть чужой трек/кавер под тем же названием.
   Future<Track?> youtubeMatch(Track track) async {
     if (track.source == SourceType.youtube) return track;
     final yt = _sources[SourceType.youtube];
     if (yt == null || !_enabled.contains(SourceType.youtube)) return null;
     try {
-      final r = await yt.search('${track.artist} ${track.title}'.trim(), limit: 1);
-      return r.isNotEmpty ? r.first : null;
+      final r = await yt.search('${track.artist} ${track.title}'.trim(), limit: 5);
+      return _pickMatch(track, r);
     } catch (_) {
       return null;
     }
   }
 
-  /// Резолв с умной маршрутизацией: если родной источник не отдал поток
-  /// (например, трек на SoundCloud доступен только по подписке Go+, или ошибка),
-  /// берём ту же песню из YouTube — бесплатного источника. Это НЕ обход
-  /// пейволла SoundCloud, а переход на доступный источник того же трека.
-  Future<PlayableStream> resolveStreamWithFallback(Track track) async {
-    try {
-      return await _sources[track.source]!.resolveStream(track);
-    } catch (e) {
-      final yt = _sources[SourceType.youtube];
-      final canFallback = track.source != SourceType.youtube &&
-          yt != null &&
-          _enabled.contains(SourceType.youtube);
-      if (canFallback) {
-        final query = '${track.artist} ${track.title}'.trim();
-        final results = await yt.search(query, limit: 1);
-        if (results.isNotEmpty) {
-          return await yt.resolveStream(results.first);
-        }
+  /// Порядок источников для подмены: YouTube первым (самый доступный/бесплатный),
+  /// затем остальные включённые, кроме родного [exclude].
+  Iterable<SourceType> _fallbackOrder(SourceType exclude) => [
+        SourceType.youtube,
+        ...SourceType.values.where((t) => t != SourceType.youtube),
+      ].where((t) =>
+          t != exclude && _enabled.contains(t) && _sources[t] != null);
+
+  /// Из выдачи поиска выбирает трек, который действительно совпадает с искомым
+  /// [want] (тот же артист+название), отсекая каверы/чужие треки.
+  @visibleForTesting
+  static Track? pickMatch(Track want, List<Track> results) {
+    for (final t in results) {
+      if (RecsDedup.resolvesTo(want.artist, want.title, t.artist, t.title)) {
+        return t;
       }
-      rethrow;
     }
+    return null;
   }
+
+  Track? _pickMatch(Track want, List<Track> results) => pickMatch(want, results);
+
+  /// Резолв с умной маршрутизацией: если родной источник не отдал поток
+  /// (например, трек на SoundCloud доступен только по подписке Go+, отключён или
+  /// ошибка), ищем ТУ ЖЕ песню в других включённых источниках и играем оттуда.
+  /// Возвращает поток и трек, который его реально отдал (его [Track.source] —
+  /// для видимой пометки «через <сервис>»). Это НЕ обход пейволла, а переход на
+  /// доступный источник того же трека.
+  Future<({PlayableStream stream, Track track})> resolveWithSource(
+      Track track) async {
+    Object? firstErr;
+    try {
+      return (
+        stream: await _sources[track.source]!.resolveStream(track),
+        track: track,
+      );
+    } catch (e) {
+      firstErr = e;
+    }
+    final query = '${track.artist} ${track.title}'.trim();
+    for (final t in _fallbackOrder(track.source)) {
+      try {
+        final src = _sources[t]!;
+        final match = _pickMatch(track, await src.search(query, limit: 5));
+        if (match == null) continue;
+        final stream = await src.resolveStream(match);
+        Diagnostics.instance.info('agg.fallback',
+            '${track.source.id} → ${t.id}: «${track.artist} — ${track.title}»');
+        return (stream: stream, track: match);
+      } catch (_) {/* пробуем следующий источник */}
+    }
+    throw firstErr; // нигде не нашли — исходная ошибка родного источника
+  }
+
+  /// Тонкая обёртка для вызовов, которым нужен только поток.
+  Future<PlayableStream> resolveStreamWithFallback(Track track) async =>
+      (await resolveWithSource(track)).stream;
 
   List<Track> _interleave(List<List<Track>> lists) {
     final out = <Track>[];

@@ -37,11 +37,14 @@ class ServiceBadge extends StatelessWidget {
   }
 }
 
-/// Пилюля «через <Сервис>» для экрана плеера.
+/// Пилюля «через <Сервис>» для экрана плеера. Если задан [origin] (трека нет в
+/// родном источнике — играем из [source] как подмену), показывает приписку
+/// «(нет в <origin>)», чтобы межисточниковая подмена была явно видна.
 class ServicePill extends StatelessWidget {
-  const ServicePill(this.source, {super.key});
+  const ServicePill(this.source, {super.key, this.origin});
 
   final SourceType source;
+  final SourceType? origin;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +62,12 @@ class ServicePill extends StatelessWidget {
           Text('через ${source.shortLabel}',
               style: TextStyle(
                   fontSize: 11, color: Colors.white.withValues(alpha: 0.8))),
+          if (origin != null) ...[
+            const SizedBox(width: 4),
+            Text('(нет в ${origin!.shortLabel})',
+                style: TextStyle(
+                    fontSize: 11, color: Colors.white.withValues(alpha: 0.5))),
+          ],
         ],
       ),
     );

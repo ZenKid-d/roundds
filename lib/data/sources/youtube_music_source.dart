@@ -187,15 +187,21 @@ class YoutubeMusicSource implements MusicSource {
     }
   }
 
-  /// Музыкальный ли это связанный стрим, а не обычное видео. Достоверный признак
-  /// — авто-канал YouTube «<Артист> - Topic» (Art Track лицензированной музыки)
-  /// или VEVO. Иначе отсекаем: в похожие не должны лезть влоги/миксы/подкасты/
-  /// стримы/шортсы. Если строгий фильтр опустошит related, вызывающий
-  /// [relatedTo] в режиме обхода падает назад на InnerTube music-radio.
-  static bool _isMusicStream(Map it) {
-    final uploader = (it['uploaderName'] ?? '').toString().toLowerCase();
-    return uploader.contains('- topic') || uploader.contains('vevo');
+  /// Достоверный музыкальный признак канала-загрузчика: авто-канал YouTube
+  /// «<Артист> - Topic» (Art Track лицензированной музыки) или VEVO. Без
+  /// официального Data API это единственный надёжный маркер «трек, а не обычное
+  /// видео» (влог/геймплей/подкаст/стрим на такой канал не попадают).
+  static bool isMusicUploader(String? uploader) {
+    final u = (uploader ?? '').toLowerCase();
+    return u.contains('- topic') || u.contains('vevo');
   }
+
+  /// Музыкальный ли это связанный стрим, а не обычное видео. Иначе отсекаем: в
+  /// похожие не должны лезть влоги/миксы/подкасты/стримы/шортсы. Если строгий
+  /// фильтр опустошит related, вызывающий [relatedTo] в режиме обхода падает
+  /// назад на InnerTube music-radio.
+  static bool _isMusicStream(Map it) =>
+      isMusicUploader(it['uploaderName']?.toString());
 
   Future<List<Track>> _pipedRelated(String videoId, {int limit = 40}) async {
     final r = await _raceInstances(
@@ -800,7 +806,17 @@ class YoutubeMusicSource implements MusicSource {
     }
 
     walk(resp.data);
-    return out;
+    // InnerTube-радио изредка подмешивает не-треки (шортсы/длинные миксы) —
+    // чистим по окну длительности музыкального трека (покрывает и «Волну»,
+    // и ряды «Похожее»). Piped-ветка выше уже строгая через _isMusicStream.
+    return out.where(_looksLikeTrack).toList();
+  }
+
+  /// Похоже на трек по длительности (не шортс/не длинный микс-стрим).
+  /// Неизвестную длительность оставляем — из радио она приходит не всегда.
+  static bool _looksLikeTrack(Track t) {
+    final s = t.duration?.inSeconds;
+    return s == null || (s >= _minSec && s <= _maxSec);
   }
 
   @visibleForTesting
@@ -1060,11 +1076,14 @@ class YoutubeMusicSource implements MusicSource {
     return node;
   }
 
-  /// Оставляем только похожее на музыкальный трек: не прямой эфир и длительность
-  /// в окне песни. Это убирает обычные видео, эфиры, миксы и подкасты.
+  /// Оставляем только музыкальный трек: с музыкального канала («- Topic»/VEVO),
+  /// не прямой эфир и длительность в окне песни. Проверка канала обязательна —
+  /// плоский поиск YouTube иначе вернёт обычные видео (влоги/геймплей/ролики).
+  /// Канал проверяем ДО [_videoToTrack] — он срезает « - Topic» из имени.
   Iterable<Track> _onlyMusic(Iterable<Video> videos) {
     return videos.where((v) {
       if (v.isLive) return false;
+      if (!isMusicUploader(v.author)) return false; // не обычные видео
       final d = v.duration;
       if (d == null) return false;
       final s = d.inSeconds;
