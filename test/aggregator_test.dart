@@ -99,7 +99,7 @@ void main() {
       // YouTube-результат — ТА ЖЕ песня (артист+название), иначе подмену
       // отсекает проверка совпадения (не играем чужой трек).
       final yt = FakeSource(SourceType.youtube, results: [
-        Track(
+        const Track(
             id: 'ytid',
             title: 'sc1',
             artist: 'artist-sc1',
@@ -152,7 +152,7 @@ void main() {
   group('Aggregator.youtubeMatch', () {
     test('находит ту же песню на YouTube для не-YT источника', () async {
       final yt = FakeSource(SourceType.youtube, results: [
-        Track(
+        const Track(
             id: 'ytid',
             title: 'sc1',
             artist: 'artist-sc1',
