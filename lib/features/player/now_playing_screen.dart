@@ -171,7 +171,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   ),
                 ],
                 const SizedBox(height: 11),
-                ServicePill(track.source),
+                ServicePill(pc.playingVia ?? track.source,
+                    origin: pc.playingVia != null ? track.source : null),
                 if (pc.error != null) _errorBox(context, ref, track, pc.error!),
                 const SizedBox(height: 12),
                 Padding(

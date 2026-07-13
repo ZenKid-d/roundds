@@ -31,6 +31,21 @@ void main() {
     });
   });
 
+  group('YoutubeMusicSource.isMusicUploader', () {
+    test('«- Topic» и VEVO → музыка (регистр не важен)', () {
+      expect(YoutubeMusicSource.isMusicUploader('Some Artist - Topic'), isTrue);
+      expect(YoutubeMusicSource.isMusicUploader('some artist - topic'), isTrue);
+      expect(YoutubeMusicSource.isMusicUploader('ArtistVEVO'), isTrue);
+      expect(YoutubeMusicSource.isMusicUploader('EminemVEVO'), isTrue);
+    });
+    test('обычный канал / пусто / null → не музыка', () {
+      expect(YoutubeMusicSource.isMusicUploader('Some Channel'), isFalse);
+      expect(YoutubeMusicSource.isMusicUploader('Топ 10 приколов'), isFalse);
+      expect(YoutubeMusicSource.isMusicUploader(''), isFalse);
+      expect(YoutubeMusicSource.isMusicUploader(null), isFalse);
+    });
+  });
+
   group('YoutubeMusicSource.dig', () {
     final data = {
       'a': [

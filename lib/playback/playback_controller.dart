@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import 'audio_handler.dart';
 
@@ -117,6 +118,10 @@ class PlaybackController extends ChangeNotifier {
 
   List<Track> get queue => _handler.trackQueue;
   Track? get current => _handler.current;
+
+  /// Источник, из которого реально играет текущий трек, если он отличается от
+  /// родного (межисточниковый фолбэк). null — играет из своего источника.
+  SourceType? get playingVia => _handler.playingVia;
   bool get isPlaying => _playing;
   bool get isLoading => _handler.isLoading;
   String? get error => _handler.error;
