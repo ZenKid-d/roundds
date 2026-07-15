@@ -37,6 +37,9 @@ class RecommendationService {
         case SourceType.soundcloud:
           final r = await _sc.related(seed.id);
           if (r.isNotEmpty) return r;
+        case SourceType.vk:
+          // У VK нет нативного «похожего» эндпоинта — уходим в подбор по артисту.
+          break;
       }
     } catch (_) {/* фолбэк ниже */}
     try {
