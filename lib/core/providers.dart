@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
 import '../data/sources/soundcloud_source.dart';
+import '../data/sources/vk_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
@@ -65,6 +66,9 @@ final soundcloudSourceProvider = Provider<SoundcloudSource>((ref) {
 final yandexSourceProvider =
     Provider<YandexSource>((ref) => YandexSource(ref.read(dioProvider)));
 
+final vkSourceProvider =
+    Provider<VkSource>((ref) => VkSource(ref.read(dioProvider)));
+
 /// Агрегатор создаётся ОДИН раз (плеер держит на него ссылку).
 /// Список включённых источников меняется через SettingsController.setEnabled.
 final aggregatorProvider = Provider<Aggregator>((ref) {
@@ -72,6 +76,7 @@ final aggregatorProvider = Provider<Aggregator>((ref) {
     SourceType.youtube: ref.read(youtubeSourceProvider),
     SourceType.soundcloud: ref.read(soundcloudSourceProvider),
     SourceType.yandex: ref.read(yandexSourceProvider),
+    SourceType.vk: ref.read(vkSourceProvider),
   });
 });
 
@@ -82,6 +87,7 @@ final settingsProvider =
     secure: ref.read(secureStorageProvider),
     yandex: ref.read(yandexSourceProvider),
     soundcloud: ref.read(soundcloudSourceProvider),
+    vk: ref.read(vkSourceProvider),
     aggregator: ref.read(aggregatorProvider),
   );
   c.load();

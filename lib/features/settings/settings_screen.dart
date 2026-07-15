@@ -64,6 +64,9 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         const _SoundcloudClientId(),
         const SizedBox(height: 16),
+        const _Header('VK Музыка'),
+        _VkToken(settings.hasVkToken),
+        const SizedBox(height: 16),
         const _Header('Аудио'),
         Consumer(builder: (context, ref, _) {
           final pc = ref.watch(playbackProvider);
@@ -249,6 +252,8 @@ class SettingsScreen extends ConsumerWidget {
         SourceType.soundcloud =>
           'Играет внутри. Go+ — по токену твоей подписки.',
         SourceType.yandex => 'Играет внутри. Нужен токен аккаунта (риск бана).',
+        SourceType.vk =>
+          'Играет внутри. Нужен токен клиента VK с доступом к аудио (риск бана).',
       };
 }
 
@@ -453,6 +458,76 @@ class _SoundcloudTokenState extends ConsumerState<_SoundcloudToken> {
               onPressed: () => ref
                   .read(settingsProvider)
                   .setSoundcloudToken(_c.text.trim()),
+              child: const Text('Сохранить токен'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _VkToken extends ConsumerStatefulWidget {
+  const _VkToken(this.hasToken);
+  final bool hasToken;
+  @override
+  ConsumerState<_VkToken> createState() => _VkTokenState();
+}
+
+class _VkTokenState extends ConsumerState<_VkToken> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Токен клиента VK с доступом к аудио (напр. Kate Mobile). Даёт большой '
+          'каталог, доступный из РФ, когда SoundCloud/YouTube заблокированы. '
+          'Аккаунт — на свой риск (нарушает правила VK).',
+          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
+        ),
+        const SizedBox(height: 8),
+        if (widget.hasToken)
+          Row(
+            children: [
+              const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
+              const SizedBox(width: 8),
+              const Text('Токен сохранён'),
+              const Spacer(),
+              TextButton(
+                onPressed: () => ref.read(settingsProvider).setVkToken(null),
+                child: const Text('Удалить'),
+              ),
+            ],
+          )
+        else ...[
+          TextField(
+            controller: _c,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: 'Access-токен VK',
+              filled: true,
+              fillColor: AppColors.surface2,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () =>
+                  ref.read(settingsProvider).setVkToken(_c.text.trim()),
               child: const Text('Сохранить токен'),
             ),
           ),

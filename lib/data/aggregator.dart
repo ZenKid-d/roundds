@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/diagnostics.dart';
+import '../core/net/net_errors.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
@@ -60,6 +61,7 @@ class Aggregator {
       try {
         return await s.search(query, limit: perSource);
       } catch (e) {
+        _logDnsBlock(e);
         Diagnostics.instance.warn('agg.search', '${s.type.id} «$query»: $e');
         return <Track>[];
       }
@@ -183,6 +185,7 @@ class Aggregator {
       firstErr = e;
     }
     final query = '${track.artist} ${track.title}'.trim();
+    var sawDnsBlock = isDnsBlockError(firstErr);
     for (final t in _fallbackOrder(track.source)) {
       try {
         final src = _sources[t]!;
@@ -192,9 +195,26 @@ class Aggregator {
         Diagnostics.instance.info('agg.fallback',
             '${track.source.id} → ${t.id}: «${track.artist} — ${track.title}»');
         return (stream: stream, track: match);
-      } catch (_) {/* пробуем следующий источник */}
+      } catch (e) {
+        if (isDnsBlockError(e)) sawDnsBlock = true;
+      }
     }
+    // Если ни один источник не резолвится из-за недоступности DNS — это не
+    // «трека нет», а блокировка/неверный DNS (часто у VPN). Пишем явно, чтобы в
+    // «Диагностике» была видна причина и подсказка.
+    if (sawDnsBlock) _logDnsBlock(firstErr);
     throw firstErr; // нигде не нашли — исходная ошибка родного источника
+  }
+
+  /// Пишет понятную запись `net.dns`, если ошибка — недоступность хоста (DNS).
+  void _logDnsBlock(Object error) {
+    if (!isDnsBlockError(error)) return;
+    final host = blockedHostOf(error);
+    Diagnostics.instance.warn(
+      'net.dns',
+      '${host ?? 'хост'} не резолвится — сеть блокирует доступ. '
+          'Смените VPN/DNS (напр. Приватный DNS: dns.google).',
+    );
   }
 
   /// Тонкая обёртка для вызовов, которым нужен только поток.

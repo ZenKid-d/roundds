@@ -15,6 +15,7 @@ import 'data/recommendation_service.dart';
 import 'data/recs/recs_db.dart';
 import 'data/recs/recs_store.dart';
 import 'data/sources/soundcloud_source.dart';
+import 'data/sources/vk_source.dart';
 import 'data/sources/yandex_source.dart';
 import 'data/sources/youtube_music_source.dart';
 import 'domain/models/source_type.dart';
@@ -37,10 +38,12 @@ Future<void> main() async {
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);
+  final vk = VkSource(dio);
   final aggregator = Aggregator({
     SourceType.youtube: youtube,
     SourceType.soundcloud: soundcloud,
     SourceType.yandex: yandex,
+    SourceType.vk: vk,
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);
@@ -115,6 +118,7 @@ Future<void> main() async {
         youtubeSourceProvider.overrideWithValue(youtube),
         soundcloudSourceProvider.overrideWithValue(soundcloud),
         yandexSourceProvider.overrideWithValue(yandex),
+        vkSourceProvider.overrideWithValue(vk),
         aggregatorProvider.overrideWithValue(aggregator),
         audioHandlerProvider.overrideWithValue(handler),
         downloadsProvider.overrideWith((ref) => downloads),

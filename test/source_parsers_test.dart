@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roundds/data/sources/soundcloud_source.dart';
+import 'package:roundds/data/sources/vk_source.dart';
 import 'package:roundds/data/sources/yandex_source.dart';
 import 'package:roundds/data/sources/youtube_music_source.dart';
 import 'package:roundds/domain/models/source_type.dart';
@@ -425,6 +426,49 @@ void main() {
       final t = SoundcloudSource.toTrack({'id': 1, 'kind': 'track'})!;
       expect(t.title, 'Без названия');
       expect(t.artist, 'SoundCloud');
+    });
+  });
+
+  group('VkSource.toTrack', () {
+    Map<String, dynamic> raw() => {
+          'id': 456,
+          'owner_id': -123,
+          'artist': 'Crystal Castles',
+          'title': 'Untrust Us',
+          'duration': 185,
+          'url': 'https://vk.com/stream/index.m3u8?ts=1',
+          'album': {
+            'thumb': {
+              'photo_300': 'https://sun.vk/300.jpg',
+              'photo_600': 'https://sun.vk/600.jpg',
+            }
+          },
+        };
+
+    test('happy path: id=owner_id_id, длительность в секундах, обложка, url в extra',
+        () {
+      final t = VkSource.toTrack(raw())!;
+      expect(t.id, '-123_456');
+      expect(t.title, 'Untrust Us');
+      expect(t.artist, 'Crystal Castles');
+      expect(t.duration, const Duration(seconds: 185));
+      expect(t.artworkUrl, 'https://sun.vk/600.jpg');
+      expect(t.extra['url'], 'https://vk.com/stream/index.m3u8?ts=1');
+      expect(t.source, SourceType.vk);
+    });
+
+    test('без id → null', () {
+      final r = raw()..remove('id');
+      expect(VkSource.toTrack(r), isNull);
+    });
+
+    test('без artist/title/url — дефолты и пустой url', () {
+      final t = VkSource.toTrack({'id': 1, 'owner_id': 2})!;
+      expect(t.id, '2_1');
+      expect(t.title, 'Без названия');
+      expect(t.artist, 'VK Музыка');
+      expect(t.extra['url'], '');
+      expect(t.artworkUrl, isNull);
     });
   });
 

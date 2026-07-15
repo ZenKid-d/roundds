@@ -32,6 +32,7 @@ class ServiceBadge extends StatelessWidget {
       SourceType.youtube => FontAwesomeIcons.youtube,
       SourceType.soundcloud => FontAwesomeIcons.soundcloud,
       SourceType.yandex => FontAwesomeIcons.yandex,
+      SourceType.vk => FontAwesomeIcons.vk,
     };
     return FaIcon(icon, size: size * 0.55, color: source.onColor);
   }
