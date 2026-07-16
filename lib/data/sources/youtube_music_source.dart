@@ -16,10 +16,13 @@ import '../../domain/music_source.dart';
 ///
 /// ⚠️ Нарушает ToS YouTube и может ломаться при их обновлениях.
 class YoutubeMusicSource implements MusicSource {
-  YoutubeMusicSource(this._dio);
+  /// [yt] можно передать заранее собранным (напр. с DoH-клиентом для обхода
+  /// блокировок); по умолчанию — обычный [YoutubeExplode].
+  YoutubeMusicSource(this._dio, {YoutubeExplode? yt})
+      : _yt = yt ?? YoutubeExplode();
 
   final Dio _dio;
-  final YoutubeExplode _yt = YoutubeExplode();
+  final YoutubeExplode _yt;
 
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '

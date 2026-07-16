@@ -32,6 +32,8 @@ dependencies:
   dio: ^5.5.0+1
   crypto: ^3.0.3
   html: ^0.15.4
+  # Нужен напрямую: DoH-обход подсовывает свой http-клиент в youtube_explode.
+  http: ^1.1.0
 
   # Images
   cached_network_image: ^3.3.1

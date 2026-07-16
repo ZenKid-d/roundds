@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:roundds/core/net/doh_resolver.dart';
 import 'package:roundds/data/sources/soundcloud_source.dart';
 import 'package:roundds/data/sources/vk_source.dart';
 import 'package:roundds/data/sources/yandex_source.dart';
@@ -426,6 +427,26 @@ void main() {
       final t = SoundcloudSource.toTrack({'id': 1, 'kind': 'track'})!;
       expect(t.title, 'Без названия');
       expect(t.artist, 'SoundCloud');
+    });
+  });
+
+  group('DohResolver.parseAnswers (DoH JSON)', () {
+    test('берёт только A-records (type 1), сохраняя порядок', () {
+      final ips = DohResolver.parseAnswers({
+        'Answer': [
+          {'type': 5, 'data': 'cname.example.com'}, // CNAME — отбрасываем
+          {'type': 1, 'data': '104.18.0.1'},
+          {'type': 1, 'data': '104.18.0.2'},
+          {'type': 1, 'data': 'not-an-ip'}, // мусор — отбрасываем
+        ]
+      });
+      expect(ips, ['104.18.0.1', '104.18.0.2']);
+    });
+
+    test('нет Answer / не карта → пусто', () {
+      expect(DohResolver.parseAnswers({'Status': 0}), isEmpty);
+      expect(DohResolver.parseAnswers('nope'), isEmpty);
+      expect(DohResolver.parseAnswers(null), isEmpty);
     });
   });
 

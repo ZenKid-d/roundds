@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/downloads_controller.dart';
+import 'core/net/doh_http.dart';
+import 'core/net/doh_resolver.dart';
 import 'core/providers.dart';
 import 'core/update_service.dart';
 import 'data/aggregator.dart';
@@ -27,12 +29,17 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
 
+  // Обход блокировок DNS (DoH): если включён — все источники резолвят хосты
+  // через DNS-over-HTTPS. Читаем до создания dio/YouTube (клиенты строятся
+  // один раз на старте, поэтому смена настройки требует перезапуска).
+  final doh = (prefs.getBool('doh_enabled') ?? false) ? DohResolver() : null;
+
   // Общие экземпляры — их же отдаём в Riverpod через overrides,
   // чтобы UI и аудио-хендлер работали с одними источниками.
-  final dio = buildAppDio();
+  final dio = buildAppDio(doh: doh);
   // Чистим оставшиеся после обновления APK из кэша.
   unawaited(UpdateService(dio).cleanupApks());
-  final youtube = YoutubeMusicSource(dio);
+  final youtube = YoutubeMusicSource(dio, yt: buildYoutubeExplode(doh));
   youtube.streamQuality = prefs.getInt('stream_quality') ??
       ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
   final soundcloud =

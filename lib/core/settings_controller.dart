@@ -45,6 +45,14 @@ class SettingsController extends ChangeNotifier {
   String? get vkToken => _vkToken;
   bool get hasVkToken => (_vkToken ?? '').isNotEmpty;
 
+  /// Обход блокировок DNS (DoH). Применяется при старте (клиенты строятся один
+  /// раз), поэтому смена требует перезапуска приложения.
+  bool get dohEnabled => _prefs.getBool('doh_enabled') ?? false;
+  Future<void> setDohEnabled(bool on) async {
+    await _prefs.setBool('doh_enabled', on);
+    notifyListeners();
+  }
+
   Future<void> load() async {
     final raw = _prefs.getStringList('enabled_sources');
     if (raw != null) {

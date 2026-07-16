@@ -67,6 +67,24 @@ class SettingsScreen extends ConsumerWidget {
         const _Header('VK Музыка'),
         _VkToken(settings.hasVkToken),
         const SizedBox(height: 16),
+        const _Header('Сеть'),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: settings.dohEnabled,
+          title: const Text('Обход блокировки DNS (DoH)'),
+          subtitle: Text(
+            'Резолвит адреса сервисов через DNS-over-HTTPS (1.1.1.1), когда '
+            'провайдер блокирует SoundCloud/YouTube. Применяется после '
+            'перезапуска приложения.',
+            style: TextStyle(color: AppColors.white45, fontSize: 11),
+          ),
+          onChanged: (v) {
+            ref.read(settingsProvider).setDohEnabled(v);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Перезапустите приложение, чтобы применить')));
+          },
+        ),
+        const SizedBox(height: 16),
         const _Header('Аудио'),
         Consumer(builder: (context, ref, _) {
           final pc = ref.watch(playbackProvider);

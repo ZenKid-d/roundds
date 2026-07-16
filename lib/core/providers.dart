@@ -10,6 +10,8 @@ import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
 import 'diagnostics.dart';
+import 'net/doh_http.dart';
+import 'net/doh_resolver.dart';
 import '../data/google_yt_import.dart';
 import '../data/lastfm_service.dart';
 import '../data/lyrics_service.dart';
@@ -43,14 +45,20 @@ final secureStorageProvider =
 final diagnosticsProvider =
     Provider<Diagnostics>((ref) => Diagnostics.instance);
 
-Dio buildAppDio() => Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
-      headers: const {
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Roundds/0.1',
-      },
-    ));
+/// [doh] != null включает обход DNS-блокировок (DoH): dio резолвит хосты через
+/// DNS-over-HTTPS и подключается по IP. null — обычный системный DNS.
+Dio buildAppDio({DohResolver? doh}) {
+  final dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 20),
+    headers: const {
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Roundds/0.1',
+    },
+  ));
+  if (doh != null) dio.httpClientAdapter = buildDohDioAdapter(doh);
+  return dio;
+}
 
 final dioProvider = Provider<Dio>((ref) => buildAppDio());
 
