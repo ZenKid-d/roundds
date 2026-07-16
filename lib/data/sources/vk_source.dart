@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -59,6 +61,29 @@ class VkSource implements MusicSource {
     return map;
   }
 
+  /// Внятное описание сбоя для диагностики. VK часто возвращает причину в ТЕЛЕ
+  /// ответа даже при HTTP-ошибке (400/403), а generic-текст Dio её прячет —
+  /// вытаскиваем `error_msg`/`error_code`, иначе показываем статус и тело.
+  static String _describe(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      dynamic body = data;
+      if (body is String && body.isNotEmpty) {
+        try {
+          body = jsonDecode(body);
+        } catch (_) {/* оставляем строкой */}
+      }
+      if (body is Map && body['error'] is Map) {
+        final err = body['error'] as Map;
+        return 'VK ${err['error_code']}: ${err['error_msg'] ?? 'ошибка'}';
+      }
+      final code = e.response?.statusCode;
+      if (code != null) return 'HTTP $code: ${body ?? e.message}';
+      return e.message ?? e.type.name;
+    }
+    return '$e';
+  }
+
   @override
   Future<List<Track>> search(String query, {int limit = 20}) async {
     _requireToken();
@@ -75,8 +100,9 @@ class VkSource implements MusicSource {
     } on SourceException {
       rethrow;
     } catch (e) {
-      Diagnostics.instance.error('vk.search', '«$query»: $e');
-      throw SourceException(type, 'ошибка поиска ($e)');
+      final why = _describe(e);
+      Diagnostics.instance.error('vk.search', '«$query»: $why');
+      throw SourceException(type, 'ошибка поиска ($why)');
     }
   }
 

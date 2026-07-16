@@ -84,6 +84,8 @@ class SettingsScreen extends ConsumerWidget {
                 content: Text('Перезапустите приложение, чтобы применить')));
           },
         ),
+        const SizedBox(height: 10),
+        _HttpProxy(settings.httpProxy),
         const SizedBox(height: 16),
         const _Header('Аудио'),
         Consumer(builder: (context, ref, _) {
@@ -550,6 +552,89 @@ class _VkTokenState extends ConsumerState<_VkToken> {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _HttpProxy extends ConsumerStatefulWidget {
+  const _HttpProxy(this.current);
+  final String current;
+  @override
+  ConsumerState<_HttpProxy> createState() => _HttpProxyState();
+}
+
+class _HttpProxyState extends ConsumerState<_HttpProxy> {
+  late final TextEditingController _c =
+      TextEditingController(text: widget.current);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _apply(String value) {
+    ref.read(settingsProvider).setHttpProxy(value);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Перезапустите приложение, чтобы применить')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.current.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'HTTP-прокси host:port. В отличие от DoH пробивает блокировку по '
+          'SNI/DPI (когда соединение рвётся уже после подключения) — трафик '
+          'идёт через прокси. Пусто — напрямую. Нужен перезапуск.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(active ? Icons.check_circle : Icons.public_off,
+                color: active ? const Color(0xFF43E08A) : AppColors.white45,
+                size: 18),
+            const SizedBox(width: 8),
+            Text(active ? 'Прокси задан' : 'Прямое соединение'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _c,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          decoration: InputDecoration(
+            hintText: '127.0.0.1:8080',
+            filled: true,
+            fillColor: AppColors.surface2,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            if (active)
+              TextButton(
+                onPressed: () {
+                  _c.clear();
+                  _apply('');
+                },
+                child: const Text('Убрать'),
+              ),
+            const Spacer(),
+            FilledButton(
+              onPressed: () => _apply(_c.text.trim()),
+              child: const Text('Применить'),
+            ),
+          ],
+        ),
       ],
     );
   }

@@ -53,6 +53,20 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// HTTP-прокси `host:port` — обход блокировки по SNI/DPI (SoundCloud/YouTube),
+  /// которую DoH не пробивает. Тоже применяется при старте → нужен перезапуск.
+  String get httpProxy => _prefs.getString('http_proxy') ?? '';
+  bool get hasHttpProxy => httpProxy.isNotEmpty;
+  Future<void> setHttpProxy(String? value) async {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) {
+      await _prefs.remove('http_proxy');
+    } else {
+      await _prefs.setString('http_proxy', v);
+    }
+    notifyListeners();
+  }
+
   Future<void> load() async {
     final raw = _prefs.getStringList('enabled_sources');
     if (raw != null) {

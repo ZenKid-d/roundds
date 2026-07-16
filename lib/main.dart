@@ -33,13 +33,17 @@ Future<void> main() async {
   // через DNS-over-HTTPS. Читаем до создания dio/YouTube (клиенты строятся
   // один раз на старте, поэтому смена настройки требует перезапуска).
   final doh = (prefs.getBool('doh_enabled') ?? false) ? DohResolver() : null;
+  // HTTP-прокси (host:port) — обход блокировки по SNI/DPI (SoundCloud/YouTube),
+  // которую DoH не пробивает. Читаем на старте (клиенты строятся один раз).
+  final proxy = prefs.getString('http_proxy');
 
   // Общие экземпляры — их же отдаём в Riverpod через overrides,
   // чтобы UI и аудио-хендлер работали с одними источниками.
-  final dio = buildAppDio(doh: doh);
+  final dio = buildAppDio(doh: doh, proxy: proxy);
   // Чистим оставшиеся после обновления APK из кэша.
   unawaited(UpdateService(dio).cleanupApks());
-  final youtube = YoutubeMusicSource(dio, yt: buildYoutubeExplode(doh));
+  final youtube =
+      YoutubeMusicSource(dio, yt: buildYoutubeExplode(doh, proxy: proxy));
   youtube.streamQuality = prefs.getInt('stream_quality') ??
       ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
   final soundcloud =

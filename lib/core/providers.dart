@@ -69,9 +69,11 @@ bool _isTransient(DioException e) {
   }
 }
 
-/// [doh] != null включает обход DNS-блокировок (DoH): dio резолвит хосты через
-/// DNS-over-HTTPS и подключается по IP. null — обычный системный DNS.
-Dio buildAppDio({DohResolver? doh}) {
+/// Обход блокировок сети: [doh] != null включает DoH (резолв через
+/// DNS-over-HTTPS + коннект по IP), [proxy] (`host:port`) — HTTP-прокси, который
+/// сам резолвит и коннектит (обходит и DNS-, и SNI-блок; приоритетнее DoH).
+/// Оба null/пусто — обычный системный DNS.
+Dio buildAppDio({DohResolver? doh, String? proxy}) {
   final dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 20),
@@ -80,7 +82,9 @@ Dio buildAppDio({DohResolver? doh}) {
           'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Roundds/0.1',
     },
   ));
-  if (doh != null) dio.httpClientAdapter = buildDohDioAdapter(doh);
+  if (doh != null || (proxy ?? '').trim().isNotEmpty) {
+    dio.httpClientAdapter = buildDohDioAdapter(doh, proxy: proxy);
+  }
 
   // Автоповтор транзиентных обрывов. Только идемпотентные GET; статусные ошибки
   // не трогаем. dio.fetch снова проходит цепочку интерцепторов, поэтому счётчик
