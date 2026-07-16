@@ -116,7 +116,8 @@ class SoundcloudSource implements MusicSource {
           .cast<Track>()
           .toList();
     } catch (e) {
-      Diagnostics.instance.error('sc.search', '«$query»: $e');
+      // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
+      Diagnostics.instance.warn('sc.search', '«$query»: $e');
       throw SourceException(type, 'ошибка поиска ($e)');
     }
   }

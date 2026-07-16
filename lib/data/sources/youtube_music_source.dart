@@ -66,7 +66,8 @@ class YoutubeMusicSource implements MusicSource {
       final results = await _yt.search.search(query);
       return _onlyMusic(results).take(limit).toList();
     } catch (e) {
-      Diagnostics.instance.error('yt.search', '«$query»: $e');
+      // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
+      Diagnostics.instance.warn('yt.search', '«$query»: $e');
       throw SourceException(type, 'не удалось выполнить поиск ($e)');
     }
   }

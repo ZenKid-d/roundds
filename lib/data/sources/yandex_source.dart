@@ -95,7 +95,8 @@ class YandexSource implements MusicSource {
           .map((e) => toTrack(e.cast<String, dynamic>()))
           .toList();
     } catch (e) {
-      Diagnostics.instance.error('ya.search', '«$query»: $e');
+      // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
+      Diagnostics.instance.warn('ya.search', '«$query»: $e');
       throw SourceException(type, 'ошибка поиска ($e)');
     }
   }

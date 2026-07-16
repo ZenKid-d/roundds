@@ -45,6 +45,30 @@ final secureStorageProvider =
 final diagnosticsProvider =
     Provider<Diagnostics>((ref) => Diagnostics.instance);
 
+const _maxRetries = 3;
+const _retryBackoff = <Duration>[
+  Duration(milliseconds: 300),
+  Duration(milliseconds: 800),
+  Duration(milliseconds: 1500),
+];
+
+/// Транзиентные сетевые сбои, которые есть смысл повторить: обрыв/сброс
+/// соединения и таймауты (частый симптом DPI-сброса у SoundCloud/YouTube).
+/// HTTP-статусы (400/403/…) сюда НЕ попадают — их повторять бессмысленно.
+bool _isTransient(DioException e) {
+  switch (e.type) {
+    case DioExceptionType.connectionError:
+    case DioExceptionType.connectionTimeout:
+    case DioExceptionType.receiveTimeout:
+      return true;
+    default:
+      final msg = '${e.message ?? ''} ${e.error ?? ''}';
+      return msg.contains('Connection closed') ||
+          msg.contains('Connection reset') ||
+          msg.contains('SocketException');
+  }
+}
+
 /// [doh] != null включает обход DNS-блокировок (DoH): dio резолвит хосты через
 /// DNS-over-HTTPS и подключается по IP. null — обычный системный DNS.
 Dio buildAppDio({DohResolver? doh}) {
@@ -57,6 +81,32 @@ Dio buildAppDio({DohResolver? doh}) {
     },
   ));
   if (doh != null) dio.httpClientAdapter = buildDohDioAdapter(doh);
+
+  // Автоповтор транзиентных обрывов. Только идемпотентные GET; статусные ошибки
+  // не трогаем. dio.fetch снова проходит цепочку интерцепторов, поэтому счётчик
+  // попыток живёт в extra. Работает и поверх DoH-адаптера.
+  dio.interceptors.add(InterceptorsWrapper(
+    onError: (e, handler) async {
+      final opts = e.requestOptions;
+      final attempt = (opts.extra['retry'] as int?) ?? 0;
+      final isGet = opts.method.toUpperCase() == 'GET';
+      if (isGet && attempt < _maxRetries && _isTransient(e)) {
+        final next = attempt + 1;
+        Diagnostics.instance.warn('net.retry',
+            '${opts.uri.host} попытка $next: ${e.message ?? e.type.name}');
+        await Future<void>.delayed(_retryBackoff[attempt]);
+        try {
+          opts.extra['retry'] = next;
+          final r = await dio.fetch<dynamic>(opts);
+          return handler.resolve(r);
+        } on DioException catch (err) {
+          return handler.next(err);
+        }
+      }
+      return handler.next(e);
+    },
+  ));
+
   return dio;
 }
 
