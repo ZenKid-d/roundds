@@ -25,6 +25,13 @@ class VkSource implements MusicSource {
   static const _base = 'https://api.vk.com/method';
   static const _apiVersion = '5.131';
 
+  // ВАЖНО: методы audio.* у VK доступны только с User-Agent клиента Kate
+  // Mobile (тем же, для которого выпущен токен client_id=2685278). С обычным
+  // UA VK отдаёт ошибку доступа / пустой ответ — треки «не находятся».
+  static const _ua =
+      'KateMobileAndroid/56 lite-460 '
+      '(Android 4.4.2; SDK 19; x86; unknown Android SDK built for x86; en)';
+
   @override
   SourceType get type => SourceType.vk;
 
@@ -32,6 +39,8 @@ class VkSource implements MusicSource {
 
   @override
   Future<bool> get isReady async => _token != null && _token!.isNotEmpty;
+
+  Options get _opts => Options(headers: const {'User-Agent': _ua});
 
   Map<String, dynamic> _params([Map<String, dynamic> extra = const {}]) => {
         'access_token': _token,
@@ -55,7 +64,8 @@ class VkSource implements MusicSource {
     _requireToken();
     try {
       final r = await _dio.get('$_base/audio.search',
-          queryParameters: _params({'q': query, 'count': limit}));
+          queryParameters: _params({'q': query, 'count': limit}),
+          options: _opts);
       final items = (_unwrap(r.data)['response']?['items'] as List? ?? []);
       return items
           .whereType<Map>()
@@ -76,7 +86,7 @@ class VkSource implements MusicSource {
     // «Лента» — популярное. Метод устаревающий; при ошибке — фолбэк на поиск.
     try {
       final r = await _dio.get('$_base/audio.getPopular',
-          queryParameters: _params({'count': limit}));
+          queryParameters: _params({'count': limit}), options: _opts);
       final resp = _unwrap(r.data)['response'];
       final items = resp is List ? resp : (resp?['items'] as List? ?? []);
       return items
@@ -99,7 +109,7 @@ class VkSource implements MusicSource {
     var url = '';
     try {
       final r = await _dio.get('$_base/audio.getById',
-          queryParameters: _params({'audios': track.id}));
+          queryParameters: _params({'audios': track.id}), options: _opts);
       final items = (_unwrap(r.data)['response'] as List? ?? []);
       if (items.isNotEmpty) {
         url = (items.first as Map)['url'] as String? ?? '';
