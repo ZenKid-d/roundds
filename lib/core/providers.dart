@@ -98,7 +98,8 @@ Dio buildAppDio({DohResolver? doh, String? proxy}) {
         final next = attempt + 1;
         Diagnostics.instance.warn('net.retry',
             '${opts.uri.host} попытка $next: ${e.message ?? e.type.name}');
-        await Future<void>.delayed(_retryBackoff[attempt]);
+        await Future<void>.delayed(
+            _retryBackoff[attempt.clamp(0, _retryBackoff.length - 1)]);
         try {
           opts.extra['retry'] = next;
           final r = await dio.fetch<dynamic>(opts);

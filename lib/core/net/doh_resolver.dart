@@ -7,7 +7,9 @@ import 'package:dio/dio.dart';
 /// DNS заблокирован (`Failed host lookup … errno = 7`) — literal-IP не требует
 /// резолва, а TLS-сертификаты Cloudflare/Google включают эти IP в SAN.
 class DohResolver {
-  DohResolver({Dio? dio}) : _dio = dio ?? Dio();
+  DohResolver({Dio? dio})
+      : _dio = dio ??
+            Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
 
   final Dio _dio;
   final Map<String, ({DateTime at, List<String> ips})> _cache = {};

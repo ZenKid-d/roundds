@@ -53,18 +53,39 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// HTTP-прокси `host:port` — обход блокировки по SNI/DPI (SoundCloud/YouTube),
-  /// которую DoH не пробивает. Тоже применяется при старте → нужен перезапуск.
+  /// Локальный HTTP-прокси `host:port` (напр. 127.0.0.1:PORT от туннель-клиента).
+  /// Применяется при старте → нужен перезапуск. См. [normalizeProxy].
   String get httpProxy => _prefs.getString('http_proxy') ?? '';
   bool get hasHttpProxy => httpProxy.isNotEmpty;
-  Future<void> setHttpProxy(String? value) async {
-    final v = (value ?? '').trim();
-    if (v.isEmpty) {
+
+  /// Приводит ввод к `host:port` (срезает схему `http://`/`socks5://` и путь).
+  /// Возвращает null, если это не похоже на `host:port` с числовым портом —
+  /// тогда прокси НЕ сохраняется (иначе кривой `PROXY ...` молча ломает всю сеть
+  /// после перезапуска, а UI показывает «задан»).
+  static String? normalizeProxy(String? value) {
+    var v = (value ?? '').trim();
+    if (v.isEmpty) return null;
+    v = v.replaceFirst(RegExp(r'^[a-zA-Z][\w+.-]*://'), '').split('/').first;
+    final m = RegExp(r'^([^\s:@]+):(\d{1,5})$').firstMatch(v);
+    if (m == null) return null;
+    final port = int.parse(m.group(2)!);
+    if (port < 1 || port > 65535) return null;
+    return v;
+  }
+
+  /// Сохраняет нормализованный прокси. Пустое/невалидное значение — сбрасывает.
+  /// Возвращает false, если ввод был непустым, но невалидным (для UI-ошибки).
+  Future<bool> setHttpProxy(String? value) async {
+    final raw = (value ?? '').trim();
+    final v = normalizeProxy(raw);
+    if (v == null) {
       await _prefs.remove('http_proxy');
-    } else {
-      await _prefs.setString('http_proxy', v);
+      notifyListeners();
+      return raw.isEmpty; // true если чистили намеренно; false если ввод кривой
     }
+    await _prefs.setString('http_proxy', v);
     notifyListeners();
+    return true;
   }
 
   Future<void> load() async {

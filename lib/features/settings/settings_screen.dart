@@ -71,11 +71,12 @@ class SettingsScreen extends ConsumerWidget {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: settings.dohEnabled,
-          title: const Text('Обход блокировки DNS (DoH)'),
+          title: const Text('Обход подмены DNS (DoH)'),
           subtitle: Text(
-            'Резолвит адреса сервисов через DNS-over-HTTPS (1.1.1.1), когда '
-            'провайдер блокирует SoundCloud/YouTube. Применяется после '
-            'перезапуска приложения.',
+            'Резолвит адреса через DNS-over-HTTPS (1.1.1.1) — помогает ТОЛЬКО '
+            'при подмене DNS провайдером («Failed host lookup»). Блокировку по '
+            'SNI (обрыв SoundCloud/YouTube «Connection closed») это НЕ обходит — '
+            'для неё нужен туннель/локальный прокси ниже. Нужен перезапуск.',
             style: TextStyle(color: AppColors.white45, fontSize: 11),
           ),
           onChanged: (v) {
@@ -574,9 +575,16 @@ class _HttpProxyState extends ConsumerState<_HttpProxy> {
     super.dispose();
   }
 
-  void _apply(String value) {
-    ref.read(settingsProvider).setHttpProxy(value);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+  Future<void> _apply(String value) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await ref.read(settingsProvider).setHttpProxy(value);
+    if (!ok) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Неверный формат — ожидается host:port, напр. '
+              '127.0.0.1:1080')));
+      return;
+    }
+    messenger.showSnackBar(const SnackBar(
         content: Text('Перезапустите приложение, чтобы применить')));
   }
 
@@ -587,9 +595,12 @@ class _HttpProxyState extends ConsumerState<_HttpProxy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'HTTP-прокси host:port. В отличие от DoH пробивает блокировку по '
-          'SNI/DPI (когда соединение рвётся уже после подключения) — трафик '
-          'идёт через прокси. Пусто — напрямую. Нужен перезапуск.',
+          'Локальный HTTP-прокси host:port от туннель-клиента на телефоне '
+          '(напр. 127.0.0.1:1080 из Amnezia/ByeDPI). Через него roundds обходит '
+          'блокировку SoundCloud/YouTube. ВАЖНО: помогает ТОЛЬКО локальный прокси '
+          'зашифрованного туннеля — удалённый/публичный прокси SNI-блокировку не '
+          'пробивает (SNI всё равно виден провайдеру). Только HTTP-прокси, SOCKS '
+          'не поддерживается. Пусто — напрямую. Нужен перезапуск.',
           style: TextStyle(fontSize: 11.5, color: AppColors.white45),
         ),
         const SizedBox(height: 8),

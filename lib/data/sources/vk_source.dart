@@ -19,10 +19,17 @@ import '../../domain/music_source.dart';
 /// `api.vk.com` — российский хост, обычно достижим, когда SoundCloud/YouTube
 /// заблокированы на уровне DNS.
 class VkSource implements MusicSource {
-  VkSource(this._dio, {String? token}) : _token = token;
+  VkSource(this._dio, {String? token}) : _token = _clean(token);
 
   final Dio _dio;
   String? _token;
+
+  /// Токен из копипаста часто приходит с пробелами/переводом строки; если их не
+  /// срезать, Dio закодирует их в access_token (%0A) → VK отвечает HTTP 400.
+  static String? _clean(String? t) {
+    final v = t?.trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
 
   static const _base = 'https://api.vk.com/method';
   static const _apiVersion = '5.131';
@@ -37,7 +44,7 @@ class VkSource implements MusicSource {
   @override
   SourceType get type => SourceType.vk;
 
-  void setToken(String? token) => _token = token;
+  void setToken(String? token) => _token = _clean(token);
 
   @override
   Future<bool> get isReady async => _token != null && _token!.isNotEmpty;
@@ -78,7 +85,10 @@ class VkSource implements MusicSource {
         return 'VK ${err['error_code']}: ${err['error_msg'] ?? 'ошибка'}';
       }
       final code = e.response?.statusCode;
-      if (code != null) return 'HTTP $code: ${body ?? e.message}';
+      if (code != null) {
+        final b = (body ?? e.message)?.toString() ?? '';
+        return 'HTTP $code: ${b.length > 200 ? '${b.substring(0, 200)}…' : b}';
+      }
       return e.message ?? e.type.name;
     }
     return '$e';
@@ -120,7 +130,9 @@ class VkSource implements MusicSource {
           .map((e) => toTrack(e.cast<String, dynamic>()))
           .whereType<Track>()
           .toList();
-    } catch (_) {
+    } catch (e) {
+      Diagnostics.instance
+          .warn('vk.feed', 'getPopular: ${_describe(e)} — фолбэк на поиск');
       return search('популярное', limit: limit);
     }
   }
@@ -141,8 +153,8 @@ class VkSource implements MusicSource {
         url = (items.first as Map)['url'] as String? ?? '';
       }
     } catch (e) {
-      Diagnostics.instance
-          .warn('vk.resolve', '${track.id} getById: $e — пробуем кэш');
+      Diagnostics.instance.warn(
+          'vk.resolve', '${track.id} getById: ${_describe(e)} — пробуем кэш');
     }
     if (url.isEmpty) url = (track.extra['url'] as String?) ?? '';
     if (url.isEmpty) {

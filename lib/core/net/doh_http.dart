@@ -23,10 +23,25 @@ HttpClient buildDohHttpClient(DohResolver? doh, {String? proxy}) {
   final p = (proxy ?? '').trim();
   if (p.isNotEmpty) {
     client.findProxy = (_) => 'PROXY $p';
-  } else if (doh != null) {
+    return client;
+  }
+  if (doh != null) {
     client.connectionFactory = (uri, proxyHost, proxyPort) async {
-      final ip = await doh.resolve(uri.host);
-      return Socket.startConnect(ip ?? uri.host, uri.port);
+      // http: можно коннектиться к IP от DoH (TLS не нужен).
+      if (!uri.isScheme('https')) {
+        final ip = await doh.resolve(uri.host);
+        return Socket.startConnect(ip ?? uri.host, uri.port);
+      }
+      // https: КРИТИЧНО — dart:io НЕ оборачивает сокет, возвращённый
+      // connectionFactory, в TLS (проверено по SDK: _HttpClientConnection вешает
+      // парсер на сырой сокет). Раньше здесь возвращался plain-Socket → открытый
+      // HTTP уходил на :443 и ЛЮБОЙ https-источник падал при включённом DoH.
+      // Коннект по IP тоже нельзя: SNI/сертификат CDN-хостов тогда ломается.
+      // Поэтому https идём системным DNS с корректным TLS. Это осознанно: DoH
+      // НЕ обходит блокировку по SNI (SoundCloud/YouTube) — для неё нужен
+      // туннель/локальный прокси, а не подмена DNS.
+      return SecureSocket.startConnect(uri.host, uri.port,
+          supportedProtocols: const ['http/1.1']);
     };
   }
   return client;
