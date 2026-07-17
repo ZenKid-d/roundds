@@ -184,8 +184,24 @@ class Aggregator {
     } catch (e) {
       firstErr = e;
     }
+    final viaOther = await resolveFromOtherSources(track, nativeErr: firstErr);
+    if (viaOther != null) return viaOther;
+    throw firstErr; // нигде не нашли — исходная ошибка родного источника
+  }
+
+  /// Резолвит ТУ ЖЕ песню из ДРУГИХ включённых источников (кроме родного [track]).
+  /// Используется и как фолбэк резолва (родной кинул ошибку — [nativeErr]), и как
+  /// подмена при СБОЕ ВОСПРОИЗВЕДЕНИЯ (родной зарезолвился, но медиа не играет —
+  /// напр. YouTube googlevideo режется провайдером, а SoundCloud играет).
+  /// null — если ни один другой источник не дал играбельный поток.
+  Future<({PlayableStream stream, Track track})?> resolveFromOtherSources(
+      Track track, {Object? nativeErr}) async {
     final query = '${track.artist} ${track.title}'.trim();
-    var sawDnsBlock = isDnsBlockError(firstErr);
+    if (query.isEmpty) return null;
+    // Если ни один источник не резолвится из-за недоступности DNS — это не
+    // «трека нет», а блокировка/неверный DNS (часто у VPN). Пишем явно.
+    Object? dnsErr =
+        (nativeErr != null && isDnsBlockError(nativeErr)) ? nativeErr : null;
     for (final t in _fallbackOrder(track.source)) {
       try {
         final src = _sources[t]!;
@@ -196,14 +212,11 @@ class Aggregator {
             '${track.source.id} → ${t.id}: «${track.artist} — ${track.title}»');
         return (stream: stream, track: match);
       } catch (e) {
-        if (isDnsBlockError(e)) sawDnsBlock = true;
+        if (isDnsBlockError(e)) dnsErr = e;
       }
     }
-    // Если ни один источник не резолвится из-за недоступности DNS — это не
-    // «трека нет», а блокировка/неверный DNS (часто у VPN). Пишем явно, чтобы в
-    // «Диагностике» была видна причина и подсказка.
-    if (sawDnsBlock) _logDnsBlock(firstErr);
-    throw firstErr; // нигде не нашли — исходная ошибка родного источника
+    if (dnsErr != null) _logDnsBlock(dnsErr);
+    return null;
   }
 
   /// Пишет понятную запись `net.dns`, если ошибка — недоступность хоста (DNS).

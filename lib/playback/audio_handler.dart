@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/diagnostics.dart';
 import '../data/aggregator.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
@@ -106,6 +107,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
   bool _recovering = false;
   int _recoverAttempts = 0;
   String? _recoverUid;
+  // uid трека, для которого РОДНОЙ источник не играется (медиа заблокировано,
+  // напр. YouTube googlevideo) — грузим его с другого источника (подмена).
+  String? _skipNativeUid;
 
   // Авто-переход на следующий трек при сбое загрузки (обрыв соединения и т.п.).
   // Серию ограничиваем, чтобы при пропаже сети не пролистать всю очередь.
@@ -343,12 +347,23 @@ class RoundsAudioHandler extends BaseAudioHandler {
           await _player.setAudioSource(AudioSource.uri(Uri.file(local)));
         } else {
           PlayableStream stream;
+          final skipNative = _skipNativeUid == track.uid;
           if (attempt == 0 &&
+              !skipNative &&
               _preUid == track.uid &&
               _preStream != null &&
               !_preStream!.isExpired) {
             stream = _preStream!;
             _playingVia = _preVia; // via, посчитанное при предзагрузке
+          } else if (skipNative) {
+            // Родной источник не играется (медиа заблокировано) — та же песня
+            // с другого рабочего источника.
+            final r = await _aggregator.resolveFromOtherSources(track);
+            if (r == null) {
+              throw Exception('трек недоступен ни в одном источнике');
+            }
+            stream = r.stream;
+            _playingVia = r.track.source;
           } else {
             final r = await _aggregator.resolveWithSource(track);
             stream = r.stream;
@@ -380,6 +395,18 @@ class RoundsAudioHandler extends BaseAudioHandler {
           if (gen != _loadGen) return;
         }
       }
+    }
+    if (gen != _loadGen) return;
+    // Родной источник не удалось воспроизвести (резолв прошёл, но плеер упал —
+    // напр. YouTube-медиа заблокировано). Прежде чем листать дальше, пробуем ту
+    // же песню с другого рабочего источника (SoundCloud/Яндекс/VK).
+    if (lastErr != null && _skipNativeUid != track.uid) {
+      _skipNativeUid = track.uid;
+      Diagnostics.instance.warn('play.substitute',
+          '${track.source.id} «${track.title}»: родной источник не играется — '
+              'пробуем другой');
+      await _load(autoSkipOnError: autoSkipOnError);
+      return;
     }
     if (gen != _loadGen) return;
     if (lastErr != null) {
@@ -414,6 +441,7 @@ class RoundsAudioHandler extends BaseAudioHandler {
   /// Повторная попытка воспроизвести текущий трек.
   Future<void> retry() {
     _recoverUid = null; // ручной повтор — сбросить бюджет авто-восстановления
+    _skipNativeUid = null; // и попробовать родной источник заново
     _errorSkipStreak = 0;
     final t = current;
     if (t != null) _aggregator.evictStreamCache(t); // свежий резолв, не из кэша
@@ -425,6 +453,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
   /// не дёргая пользователя ручным «Повтором».
   void _onPlaybackError(Object e, StackTrace st) {
     if (e is PlayerInterruptedException) return; // прерывание аудиофокуса — не наш случай
+    final t = current;
+    // Раньше ошибка плеера молча терялась (диагностика была пустой) — теперь
+    // видно реальную причину сбоя воспроизведения (напр. 403/блок googlevideo).
+    Diagnostics.instance
+        .warn('play.error', '${t?.source.id ?? '?'} «${t?.title ?? ''}»: $e');
     unawaited(_tryAutoRecover());
   }
 
@@ -441,6 +474,16 @@ class RoundsAudioHandler extends BaseAudioHandler {
     if (_recoverAttempts >= 3) return;
     _recoverAttempts++;
     _recovering = true;
+    // 1-я попытка — свежий резолв РОДНОГО источника (протухшая ссылка/блип).
+    // Со 2-й — подмена той же песни на другой рабочий источник: родное медиа не
+    // играется (напр. YouTube googlevideo режется провайдером) → берём SoundCloud.
+    if (_recoverAttempts >= 2 && _playingVia == null) {
+      _skipNativeUid = track.uid;
+    }
+    Diagnostics.instance.warn(
+        'play.recover',
+        '${track.source.id} «${track.title}»: попытка $_recoverAttempts'
+            '${_skipNativeUid == track.uid ? ' (подмена источника)' : ''}');
     final pos = _player.position; // вернёмся на то же место после перерезолва
     _preUid = null; // возможно-протухшая предзагрузка больше не годится
     _preStream = null;
@@ -514,6 +557,13 @@ class RoundsAudioHandler extends BaseAudioHandler {
       if (markVia) _playingVia = null;
       return AudioSource.uri(Uri.file(local));
     }
+    if (_skipNativeUid == t.uid) {
+      // Родной источник не играется — та же песня с другого источника.
+      final r = await _aggregator.resolveFromOtherSources(t);
+      if (r == null) throw Exception('трек недоступен ни в одном источнике');
+      if (markVia) _playingVia = r.track.source;
+      return AudioSource.uri(r.stream.uri, headers: r.stream.headers);
+    }
     final r = await _aggregator.resolveWithSource(t);
     if (markVia) _playingVia = r.track.source == t.source ? null : r.track.source;
     return AudioSource.uri(r.stream.uri, headers: r.stream.headers);
@@ -565,6 +615,18 @@ class RoundsAudioHandler extends BaseAudioHandler {
           if (gen != _loadGen) return;
         }
       }
+    }
+    if (gen != _loadGen) return;
+    // Родной источник не удалось воспроизвести (резолв прошёл, но плеер упал —
+    // напр. YouTube-медиа заблокировано). Прежде чем листать дальше, пробуем ту
+    // же песню с другого рабочего источника (SoundCloud/Яндекс/VK).
+    if (lastErr != null && _skipNativeUid != track.uid) {
+      _skipNativeUid = track.uid;
+      Diagnostics.instance.warn('play.substitute',
+          '${track.source.id} «${track.title}»: родной источник не играется — '
+              'пробуем другой');
+      await _load(autoSkipOnError: autoSkipOnError);
+      return;
     }
     if (gen != _loadGen) return;
     if (lastErr != null) {
