@@ -81,11 +81,15 @@ class YandexSource implements MusicSource {
       });
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     _requireToken();
     try {
+      // ВАЖНО: 'page' раньше был захардкожен в 0 — при догрузке следующей
+      // порции (см. поиск) это значило, что API всегда отдавал одну и ту же
+      // первую страницу, а вырос бы только клиентский .take(limit); реальных
+      // новых треков со второй и последующих страниц не приходило никогда.
       final r = await _dio.get('$_base/search',
-          queryParameters: {'text': query, 'type': 'track', 'page': 0},
+          queryParameters: {'text': query, 'type': 'track', 'page': page},
           options: _opts);
       final results =
           (r.data['result']?['tracks']?['results'] as List? ?? []);

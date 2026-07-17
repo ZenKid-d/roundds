@@ -18,15 +18,23 @@ import '../artist/artist_screen.dart';
 final _queryProvider = StateProvider<String>((ref) => '');
 final _filterProvider = StateProvider<SourceType?>((ref) => null);
 
-/// Стартовые лимиты — как было раньше (perSource по умолчанию у
-/// Aggregator.search / лимит при фильтре по одному источнику).
+/// perSource по умолчанию у Aggregator.search — как было раньше для «Все».
 const _baseSearchLimit = 15;
-const _filteredSearchLimit = 40;
 
-/// Сколько доп. треков подгружать за один долистыванием до конца списка.
+/// Единый размер «страницы» при фильтре по одному источнику — используется и
+/// как реальный offset/page у самого источника (SoundCloud/VK/Яндекс), и как
+/// шаг счётчика подгруженных страниц.
+const _filteredPageSize = 20;
+
+/// Сколько физических страниц читать сразу при первом открытии фильтра —
+/// даёт стартовую глубину, сравнимую со старым лимитом 40 (2×20).
+const _initialPages = 2;
+
+/// Сколько доп. треков подгружать за одно долистывание до конца списка (для
+/// «Все» — по perSource на источник).
 const _pageStep = 15;
 
-/// Число уже подгруженных «страниц» сверх стартового лимита — растёт при
+/// Число уже подгруженных «страниц» сверх стартовых — растёт при
 /// долистывании до конца, сбрасывается на 0 при новом запросе/фильтре.
 final _extraPagesProvider = StateProvider<int>((ref) => 0);
 
@@ -46,20 +54,33 @@ final _resultsProvider = FutureProvider<List<Track>>((ref) async {
   // тогда ведём себя так, будто выбрано «Все».
   final filter =
       rawFilter != null && enabledSources.contains(rawFilter) ? rawFilter : null;
-  final extra = ref.watch(_extraPagesProvider) * _pageStep;
+  final extraPages = ref.watch(_extraPagesProvider);
   final aggregator = ref.read(aggregatorProvider);
   if (filter != null) {
-    // Отдельный запрос именно к выбранному источнику с большим лимитом —
-    // иначе фильтр просто резал бы уже загруженные для «Все» perSource=15.
-    try {
-      return await aggregator
-          .sourceFor(filter)
-          .search(q, limit: _filteredSearchLimit + extra);
-    } catch (_) {
-      return const [];
+    // Настоящая постраничная выдача именно у выбранного источника: раньше
+    // догрузка просто просила у источника «побольше одним запросом», а
+    // источники либо игнорировали это (Яндекс был жёстко зашит на 'page': 0
+    // и всегда отдавал первую страницу), либо упирались в потолок одного
+    // ответа API — список переставал расти после первого же долистывания.
+    // Теперь читаем реальные страницы 0..N и объединяем с дедупом по uid.
+    final source = aggregator.sourceFor(filter);
+    final pagesToFetch = _initialPages + extraPages;
+    // Каждая страница ловит ошибку сама — сбой одной (например, свежедобавленной
+    // при долистывании) не должен обнулять уже успешно полученные соседние.
+    final pages = await Future.wait([
+      for (var p = 0; p < pagesToFetch; p++)
+        source.search(q, limit: _filteredPageSize, page: p).catchError((_) => <Track>[]),
+    ]);
+    final seen = <String>{};
+    final merged = <Track>[];
+    for (final page in pages) {
+      for (final t in page) {
+        if (seen.add(t.uid)) merged.add(t);
+      }
     }
+    return merged;
   }
-  return aggregator.search(q, perSource: _baseSearchLimit + extra);
+  return aggregator.search(q, perSource: _baseSearchLimit + extraPages * _pageStep);
 });
 
 /// История поиска (последние запросы), хранится в SharedPreferences.

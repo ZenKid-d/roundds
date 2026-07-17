@@ -98,7 +98,7 @@ class SoundcloudSource implements MusicSource {
   }
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     await _ensureClientId();
     try {
       final r = await _dio.get('$_apiBase/search/tracks',
@@ -106,6 +106,7 @@ class SoundcloudSource implements MusicSource {
             'q': query,
             'client_id': _clientId,
             'limit': limit,
+            if (page > 0) 'offset': page * limit,
           },
           options: Options(headers: _authHeaders));
       final list = (r.data['collection'] as List? ?? []);

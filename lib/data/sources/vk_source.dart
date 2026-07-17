@@ -95,11 +95,15 @@ class VkSource implements MusicSource {
   }
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     _requireToken();
     try {
       final r = await _dio.get('$_base/audio.search',
-          queryParameters: _params({'q': query, 'count': limit}),
+          queryParameters: _params({
+            'q': query,
+            'count': limit,
+            if (page > 0) 'offset': page * limit,
+          }),
           options: _opts);
       final items = (_unwrap(r.data)['response']?['items'] as List? ?? []);
       return items

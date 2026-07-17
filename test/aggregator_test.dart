@@ -27,7 +27,7 @@ class FakeSource implements MusicSource {
   Future<bool> get isReady async => ready;
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     searchCalls++;
     return results;
   }
@@ -256,7 +256,7 @@ class _ThrowingSearchSource extends FakeSource {
   _ThrowingSearchSource(super.type);
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     throw Exception('search failed');
   }
 }

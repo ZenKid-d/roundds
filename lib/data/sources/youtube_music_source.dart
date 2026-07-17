@@ -64,7 +64,12 @@ class YoutubeMusicSource implements MusicSource {
   Future<bool> get isReady async => true;
 
   @override
-  Future<List<Track>> search(String query, {int limit = 20}) async {
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
+    // page игнорируется: постраничная выдача (continuation-токены) для
+    // поиска не реализована — страницы > 0 вернут тот же первый результат.
+    // Вызывающий код (догрузка при долистывании) дедуплицирует по uid и сам
+    // остановится, когда новых треков не появляется.
+    //
     // Приоритет — поиск YouTube Music (фильтр «Songs»): только музыка, с
     // квадратными обложками альбомов. Если он недоступен — обычный поиск
     // YouTube с фильтром по длительности.
