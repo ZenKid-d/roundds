@@ -10,6 +10,7 @@ import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/track_card.dart';
+import '../../data/sources/youtube_music_source.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import '../artist/artist_screen.dart';
@@ -20,6 +21,13 @@ final _filterProvider = StateProvider<SourceType?>((ref) => null);
 final _resultsProvider = FutureProvider<List<Track>>((ref) async {
   final q = ref.watch(_queryProvider).trim();
   if (q.isEmpty) return const [];
+  // Вставленная ссылка на видео YouTube — резолвим ровно это видео,
+  // а не гоняем ссылку через текстовый поиск по всем источникам.
+  final videoId = extractYoutubeVideoId(q);
+  if (videoId != null) {
+    final track = await ref.read(youtubeSourceProvider).resolveVideo(videoId);
+    return [track];
+  }
   final results = await ref.read(aggregatorProvider).search(q);
   final filter = ref.watch(_filterProvider);
   if (filter == null) return results;
@@ -81,7 +89,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _onChanged(String v) {
     _debounce?.cancel();
     final q = v.trim();
-    if (q.isEmpty) {
+    // Пустая строка или уже вставленная ссылка на видео — автодополнение не нужно.
+    if (q.isEmpty || extractYoutubeVideoId(q) != null) {
       setState(() => _suggestions = const []);
       return;
     }
@@ -114,7 +123,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (q.isEmpty) return;
     _controller.text = q;
     ref.read(_queryProvider.notifier).state = q;
-    ref.read(_recentSearchesProvider.notifier).add(q);
+    // Сырую ссылку в историю недавних запросов не сохраняем — бесполезна для
+    // повторного поиска.
+    if (extractYoutubeVideoId(q) == null) {
+      ref.read(_recentSearchesProvider.notifier).add(q);
+    }
     setState(() => _suggestions = const []);
     FocusScope.of(context).unfocus();
   }
@@ -238,7 +251,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final recents = ref.watch(_recentSearchesProvider);
     if (recents.isEmpty) {
       return _hint('Введите запрос — найдём по YouTube, '
-          'SoundCloud и Яндексу сразу.');
+          'SoundCloud и Яндексу сразу. Либо вставьте ссылку на видео YouTube.');
     }
     return ListView(
       children: [

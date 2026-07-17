@@ -11,6 +11,19 @@ import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import '../../domain/music_source.dart';
 
+/// Ссылка на конкретное видео YouTube (watch/youtu.be/shorts/embed/live) —
+/// извлекаем videoId, чтобы отличить вставленную в поиск ссылку от обычного
+/// текстового запроса.
+final _kVideoUrlRegex = RegExp(
+  r'(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)'
+  r'([A-Za-z0-9_-]{11})',
+  caseSensitive: false,
+);
+
+/// videoId, если [input] — ссылка на конкретное видео YouTube, иначе null.
+String? extractYoutubeVideoId(String input) =>
+    _kVideoUrlRegex.firstMatch(input.trim())?.group(1);
+
 /// Источник YouTube Music поверх внутренних эндпоинтов YouTube
 /// (как делает NewPipe). Аудио играет ВНУТРИ нашего плеера.
 ///
@@ -566,6 +579,19 @@ class YoutubeMusicSource implements MusicSource {
       duration: duration,
       source: SourceType.youtube,
     );
+  }
+
+  /// Резолв одиночного видео по videoId (вставленная в поиск ссылка). Без
+  /// фильтра [_onlyMusic] — по прямой ссылке показываем ровно то видео, что
+  /// вставил пользователь, а не только «музыкальные» каналы.
+  Future<Track> resolveVideo(String videoId) async {
+    try {
+      final v = await _yt.videos.get(videoId);
+      return _videoToTrack(v);
+    } catch (e) {
+      Diagnostics.instance.warn('yt.resolveVideo', '$videoId: $e');
+      throw SourceException(type, 'видео недоступно ($e)');
+    }
   }
 
   /// Импорт плейлиста по ссылке/ID. Тянем напрямую из ytInitialData + InnerTube
