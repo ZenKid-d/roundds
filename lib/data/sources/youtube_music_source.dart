@@ -119,13 +119,33 @@ class YoutubeMusicSource implements MusicSource {
     // и раньше поиск молча падал в обычный видео-поиск, полный каверов. Если
     // фильтр пуст — повторяем БЕЗ него и разбираем «Top result» + музыкальные
     // видео, чтобы официальный релиз всё равно нашёлся.
-    final songs = await _musicSearchRequest(query, limit: limit, songs: true);
-    if (songs.isNotEmpty) return songs;
-    return _musicSearchRequest(query, limit: limit, songs: false);
+    //
+    // Параллельно добираем «Video»-элементы из обычной (нефильтрованной)
+    // выдачи: для запроса по имени артиста фильтр «Songs» часто отдаёт каталог
+    // живых записей/каверов вперемешку и не показывает просмотры, из-за чего
+    // по-настоящему популярные официальные клипы (сотни млн/млрд просмотров)
+    // не попадают в выдачу вообще — их видно только среди «Video» в обычном
+    // поиске. Ставим такие видео первыми.
+    final results = await Future.wait([
+      _musicSearchRequest(query, limit: limit, songs: true),
+      _musicSearchRequest(query, limit: limit, songs: false, onlyType: 'video'),
+    ]);
+    final songs = results[0];
+    if (songs.isEmpty) {
+      return _musicSearchRequest(query, limit: limit, songs: false);
+    }
+    final popularVideos = results[1];
+    final seen = songs.map((t) => t.id).toSet();
+    final extra = popularVideos.where((t) => seen.add(t.id)).toList();
+    return [...extra, ...songs].take(limit).toList();
   }
 
+  /// [onlyType] — если задан, оставляет только записи с этим типом строки
+  /// подписи (см. [metaFromRuns]), например `'video'` для официальных клипов
+  /// с публичными просмотрами. Имеет смысл только при `songs: false` — сам
+  /// фильтр «Songs» подписи с типом не отдаёт.
   Future<List<Track>> _musicSearchRequest(String query,
-      {required int limit, required bool songs}) async {
+      {required int limit, required bool songs, String? onlyType}) async {
     final resp = await _dio.post(
       'https://music.youtube.com/youtubei/v1/search',
       queryParameters: {'key': _musicKey},
@@ -156,12 +176,12 @@ class YoutubeMusicSource implements MusicSource {
         // «Top result» — самый релевантный трек (часто именно официальный),
         // лежит в карточке, а не в списке; парсер списка её пропускал.
         final card = n['musicCardShelfRenderer'];
-        if (card is Map) {
+        if (card is Map && onlyType == null) {
           final t = cardShelfToTrack(card);
           if (t != null && seen.add(t.id)) out.add(t);
         }
         final r = n['musicResponsiveListItemRenderer'];
-        if (r is Map) {
+        if (r is Map && (onlyType == null || _rowType(r) == onlyType)) {
           final t = mrlirToTrack(r);
           if (t != null && seen.add(t.id)) out.add(t);
         }
@@ -266,6 +286,20 @@ class YoutubeMusicSource implements MusicSource {
       duration: meta.duration,
       source: SourceType.youtube,
     );
+  }
+
+  /// Тип строки подписи (song/video/…) под musicResponsiveListItemRenderer —
+  /// та же логика, что использует [mrlirToTrack] внутри себя для отсева
+  /// подкастов/профилей, но здесь нужен сам тип, а не решение «показывать/нет».
+  static String? _rowType(Map r) {
+    final runs = dig(r, [
+      'flexColumns',
+      1,
+      'musicResponsiveListItemFlexColumnRenderer',
+      'text',
+      'runs'
+    ]);
+    return metaFromRuns(runs is List ? runs : const []).type;
   }
 
   /// Разбирает musicResponsiveListItemRenderer в Track.

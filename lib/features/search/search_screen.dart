@@ -18,6 +18,18 @@ import '../artist/artist_screen.dart';
 final _queryProvider = StateProvider<String>((ref) => '');
 final _filterProvider = StateProvider<SourceType?>((ref) => null);
 
+/// Стартовые лимиты — как было раньше (perSource по умолчанию у
+/// Aggregator.search / лимит при фильтре по одному источнику).
+const _baseSearchLimit = 15;
+const _filteredSearchLimit = 40;
+
+/// Сколько доп. треков подгружать за один долистыванием до конца списка.
+const _pageStep = 15;
+
+/// Число уже подгруженных «страниц» сверх стартового лимита — растёт при
+/// долистывании до конца, сбрасывается на 0 при новом запросе/фильтре.
+final _extraPagesProvider = StateProvider<int>((ref) => 0);
+
 final _resultsProvider = FutureProvider<List<Track>>((ref) async {
   final q = ref.watch(_queryProvider).trim();
   if (q.isEmpty) return const [];
@@ -28,10 +40,26 @@ final _resultsProvider = FutureProvider<List<Track>>((ref) async {
     final track = await ref.read(youtubeSourceProvider).resolveVideo(videoId);
     return [track];
   }
-  final results = await ref.read(aggregatorProvider).search(q);
-  final filter = ref.watch(_filterProvider);
-  if (filter == null) return results;
-  return results.where((t) => t.source == filter).toList();
+  final enabledSources = ref.watch(settingsProvider).enabledSources;
+  final rawFilter = ref.watch(_filterProvider);
+  // Источник могли выключить в настройках, пока был выбран его фильтр —
+  // тогда ведём себя так, будто выбрано «Все».
+  final filter =
+      rawFilter != null && enabledSources.contains(rawFilter) ? rawFilter : null;
+  final extra = ref.watch(_extraPagesProvider) * _pageStep;
+  final aggregator = ref.read(aggregatorProvider);
+  if (filter != null) {
+    // Отдельный запрос именно к выбранному источнику с большим лимитом —
+    // иначе фильтр просто резал бы уже загруженные для «Все» perSource=15.
+    try {
+      return await aggregator
+          .sourceFor(filter)
+          .search(q, limit: _filteredSearchLimit + extra);
+    } catch (_) {
+      return const [];
+    }
+  }
+  return aggregator.search(q, perSource: _baseSearchLimit + extra);
 });
 
 /// История поиска (последние запросы), хранится в SharedPreferences.
@@ -76,14 +104,54 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   Timer? _debounce;
   List<String> _suggestions = const [];
+
+  // Подгрузка следующей порции при долистывании до конца: держим уже
+  // показанный список на экране (без полноэкранного спиннера) и не долбим
+  // сеть повторно, если источники уже отдали всё, что могли (_exhausted).
+  bool _isLoadingMore = false;
+  bool _exhausted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.maxScrollExtent > 0 && pos.pixels >= pos.maxScrollExtent - 400) {
+      _maybeLoadMore();
+    }
+  }
+
+  void _maybeLoadMore() {
+    if (_exhausted || _isLoadingMore) return;
+    final results = ref.read(_resultsProvider);
+    if (!results.hasValue || results.isLoading) return;
+    setState(() => _isLoadingMore = true);
+    ref.read(_extraPagesProvider.notifier).state++;
+  }
+
+  /// Сбрасывает состояние подгрузки — вызывается при новом запросе/фильтре,
+  /// чтобы старое «источники исчерпаны» не блокировало следующий поиск.
+  void _resetPaging() {
+    ref.read(_extraPagesProvider.notifier).state = 0;
+    setState(() {
+      _isLoadingMore = false;
+      _exhausted = false;
+    });
   }
 
   void _onChanged(String v) {
@@ -123,6 +191,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (q.isEmpty) return;
     _controller.text = q;
     ref.read(_queryProvider.notifier).state = q;
+    _resetPaging();
     // Сырую ссылку в историю недавних запросов не сохраняем — бесполезна для
     // повторного поиска.
     if (extractYoutubeVideoId(q) == null) {
@@ -135,7 +204,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final results = ref.watch(_resultsProvider);
-    final filter = ref.watch(_filterProvider);
+    // Если подгрузка не добавила новых треков — источники исчерпаны,
+    // дальше по скроллу сеть больше не дёргаем.
+    ref.listen<AsyncValue<List<Track>>>(_resultsProvider, (prev, next) {
+      if (!_isLoadingMore || next.isLoading) return;
+      final prevLen = prev?.valueOrNull?.length ?? 0;
+      final nextLen = next.valueOrNull?.length ?? 0;
+      setState(() {
+        _isLoadingMore = false;
+        if (nextLen <= prevLen) _exhausted = true;
+      });
+    });
+    final enabledSources = ref.watch(settingsProvider).enabledSources;
+    final rawFilter = ref.watch(_filterProvider);
+    final filter =
+        rawFilter != null && enabledSources.contains(rawFilter) ? rawFilter : null;
     final submitted = ref.watch(_queryProvider).trim();
 
     return Column(
@@ -156,6 +239,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 onPressed: () {
                   _controller.clear();
                   ref.read(_queryProvider.notifier).state = '';
+                  _resetPaging();
                   setState(() => _suggestions = const []);
                 },
               ),
@@ -177,16 +261,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               _Chip(
                   label: 'Все',
                   active: filter == null,
-                  onTap: () =>
-                      ref.read(_filterProvider.notifier).state = null),
+                  onTap: () {
+                    ref.read(_filterProvider.notifier).state = null;
+                    _resetPaging();
+                  }),
               for (final s in SourceType.values)
-                _Chip(
-                  label: s.shortLabel,
-                  active: filter == s,
-                  color: s.color,
-                  onTap: () =>
-                      ref.read(_filterProvider.notifier).state = s,
-                ),
+                if (enabledSources.contains(s))
+                  _Chip(
+                    label: s.shortLabel,
+                    active: filter == s,
+                    color: s.color,
+                    onTap: () {
+                      ref.read(_filterProvider.notifier).state = s;
+                      _resetPaging();
+                    },
+                  ),
             ],
           ),
         ),
@@ -212,6 +301,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
+    // Подгрузка следующей порции: держим уже показанный список, а не
+    // перекрываем его полноэкранным спиннером на время дозапроса.
+    if (_isLoadingMore && results.hasValue) {
+      return _resultsList(results.value!, submitted, loadingFooter: true);
+    }
+
     return results.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
@@ -222,26 +317,43 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               style: TextStyle(color: AppColors.white45)),
         ),
       ),
-      data: (tracks) {
-        if (submitted.isEmpty) return _recentsOrHint();
-        if (tracks.isEmpty) return _hint('Ничего не найдено.');
-        // Уникальные артисты из результатов (для перехода на их страницы).
-        final artists = <String>[];
-        final seen = <String>{};
-        for (final t in tracks) {
-          if (seen.add(t.artist.toLowerCase())) artists.add(t.artist);
+      data: (tracks) => _resultsList(tracks, submitted, loadingFooter: false),
+    );
+  }
+
+  Widget _resultsList(List<Track> tracks, String submitted,
+      {required bool loadingFooter}) {
+    if (submitted.isEmpty) return _recentsOrHint();
+    if (tracks.isEmpty) return _hint('Ничего не найдено.');
+    // Уникальные артисты из результатов (для перехода на их страницы).
+    final artists = <String>[];
+    final seen = <String>{};
+    for (final t in tracks) {
+      if (seen.add(t.artist.toLowerCase())) artists.add(t.artist);
+    }
+    return ListView.builder(
+      controller: _scrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      itemCount: tracks.length + 1 + (loadingFooter ? 1 : 0),
+      itemBuilder: (_, i) {
+        if (i == 0) return _artistsRow(artists);
+        final idx = i - 1;
+        if (idx >= tracks.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
         }
-        return ListView.builder(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: tracks.length + 1,
-          itemBuilder: (_, i) {
-            if (i == 0) return _artistsRow(artists);
-            final t = tracks[i - 1];
-            return TrackRow(
-              track: t,
-              onTap: () => playTrack(ref, context, t, queue: tracks),
-            );
-          },
+        final t = tracks[idx];
+        return TrackRow(
+          track: t,
+          onTap: () => playTrack(ref, context, t, queue: tracks),
         );
       },
     );
