@@ -56,7 +56,12 @@ class WaveEngine {
   final Set<String> Function() _blacklist;
 
   /// Максимум сетевых резолвов (RawCandidate без готового трека) за генерацию.
-  static const int _maxResolvePerGen = 14;
+  /// Было 14 — с Last.fm это заметно душило глубину похожести (только топ-14
+  /// сырых кандидатов из графа похожести реально становились играбельными
+  /// треками за цикл). 18 — умеренный запас: чуть шире пул, но без резкого
+  /// роста сетевых запросов на горячем пути (extend вызывается на каждый
+  /// долив буфера/скип).
+  static const int _maxResolvePerGen = 18;
 
   /// Границы длительности «музыкального трека».
   static const int _minTrackSec = 45; // ниже — шортсы/клипы
@@ -123,11 +128,17 @@ class WaveEngine {
   }
 
   /// Старт волны: первый буфер из профиля (+ опциональный сид-трек).
+  ///
+  /// 6, а не 4, любимых трека сидами: нативные провайдеры (SoundCloud related/
+  /// YouTube radio/Yandex similar) строят «похожее» именно от сид-треков, а не
+  /// от seedArtists/seedTags (те слушает только Last.fm) — больше сидов здесь
+  /// значит шире сырой пул кандидатов без Last.fm, вызывается один раз при
+  /// открытии волны, так что запас по сети не критичен.
   Future<List<Track>> start({Track? seed, int limit = 18}) async {
     await _resetSession();
     final seeds = <Track>[
       if (seed != null) seed,
-      ..._favorites().take(4),
+      ..._favorites().take(6),
     ];
     return _generate(seeds, limit: limit);
   }
@@ -138,7 +149,9 @@ class WaveEngine {
     if (_profile.heardArtists.isEmpty && _served.isEmpty) {
       _profile = await _store.buildProfile();
     }
-    final seeds = <Track>[seed, ..._favorites().take(2)];
+    // Горячий путь (каждый скип/долив буфера) — прибавка скромнее, чем в
+    // start(), чтобы не плодить лишние сетевые запросы на каждый вызов.
+    final seeds = <Track>[seed, ..._favorites().take(3)];
     return _generate(seeds, limit: limit);
   }
 

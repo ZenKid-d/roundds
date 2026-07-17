@@ -294,39 +294,64 @@ class _WaveCharacterChips extends ConsumerWidget {
 }
 
 /// Чипы настроения волны (приблизительно, через теги Last.fm).
+///
+/// Без ключа Last.fm у треков нет тегов вообще — выбор настроения тогда ни на
+/// что не влияет, хотя выглядит как рабочий переключатель. Честнее показать
+/// чипы неактивными с пояснением, чем притворяться, что что-то меняется.
 class _WaveMoodChips extends ConsumerWidget {
   const _WaveMoodChips();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mood = ref.watch(waveMoodProvider);
-    return SizedBox(
-      height: 42,
-      child: Row(
+    final hasLastfm = ref.watch(lastfmServiceProvider).hasApiKey;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(width: 16),
-          Text('Настроение',
-              style: TextStyle(fontSize: 11, color: AppColors.white45)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(right: 16),
-              itemCount: WaveMood.values.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final m = WaveMood.values[i];
-                return ChoiceChip(
-                  label: Text(m.label, style: const TextStyle(fontSize: 12.5)),
-                  selected: m == mood,
-                  onSelected: (_) {
-                    ref.read(waveMoodProvider.notifier).state = m;
-                    ref.read(prefsProvider).setString('wave_mood_tag', m.id);
-                  },
-                );
-              },
+          SizedBox(
+            height: 42,
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                Text('Настроение',
+                    style: TextStyle(fontSize: 11, color: AppColors.white45)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.only(right: 16),
+                    itemCount: WaveMood.values.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final m = WaveMood.values[i];
+                      return ChoiceChip(
+                        label:
+                            Text(m.label, style: const TextStyle(fontSize: 12.5)),
+                        selected: m == mood,
+                        onSelected: hasLastfm
+                            ? (_) {
+                                ref.read(waveMoodProvider.notifier).state = m;
+                                ref
+                                    .read(prefsProvider)
+                                    .setString('wave_mood_tag', m.id);
+                              }
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
+          if (!hasLastfm)
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Text('Работает с ключом Last.fm в настройках',
+                  style: TextStyle(fontSize: 10.5, color: AppColors.white45)),
+            ),
         ],
       ),
     );

@@ -73,20 +73,25 @@ class RecsStore extends ChangeNotifier {
   void recordRepeat(Track t) => unawaited(_insert(t, SignalKind.repeat));
 
   /// Событие завершения трека: классифицируем скип/дослушал, обновляем cooldown.
+  ///
+  /// Cooldown ставим при ЛЮБОМ исходе, включая жёсткий скип. Раньше жёсткий
+  /// скип его не трогал (идея была «не считать за прослушивание») — но это
+  /// значило, что трек, который бросили через 10 секунд, вообще не получал
+  /// защиты от повтора и мог тут же снова всплыть в волне на следующей
+  /// генерации/сессии. Именно то, что скипнули — веский повод не показывать
+  /// снова в первую очередь.
   void recordPlayback(Track t, int playedMs, int durMs) {
     final kind =
         RecsSignals.classifyPlayback(playedMs: playedMs, durationMs: durMs);
     unawaited(() async {
       await _insert(t, kind, playedMs: playedMs, durMs: durMs);
-      if (kind != SignalKind.skipHard) {
-        try {
-          await _sql.insert(
-            'cooldowns',
-            {'track_key': keyFor(t), 'last_played_ts': _nowSec},
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        } catch (_) {}
-      }
+      try {
+        await _sql.insert(
+          'cooldowns',
+          {'track_key': keyFor(t), 'last_played_ts': _nowSec},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } catch (_) {}
     }());
   }
 
