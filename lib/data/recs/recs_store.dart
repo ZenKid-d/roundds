@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -237,11 +238,17 @@ class RecsStore extends ChangeNotifier {
     }
   }
 
-  /// Строит профиль из event log и сохраняет снапшот. Построение лёгкое;
-  /// тяжёлое ранжирование пула кандидатов уйдёт в изолейт (Фаза 3).
+  /// Строит профиль из event log и сохраняет снапшот. Само построение уходит
+  /// в отдельный изолейт — при большой истории (до 5000 событий) проход по
+  /// логу с decay-взвешиванием не должен подвешивать UI-поток.
   Future<TasteProfile> buildProfile({int maxEvents = 5000}) async {
     final events = await loadProfileEvents(limit: maxEvents);
-    final profile = TasteProfileBuilder.build(events, nowSec: _nowSec);
+    final now = _nowSec;
+    final profile = events.length < 200
+        // Малую историю не имеет смысла гонять через изолейт — накладные
+        // расходы на его запуск дороже самого вычисления.
+        ? TasteProfileBuilder.build(events, nowSec: now)
+        : await Isolate.run(() => TasteProfileBuilder.build(events, nowSec: now));
     unawaited(_saveSnapshot(profile));
     return profile;
   }
