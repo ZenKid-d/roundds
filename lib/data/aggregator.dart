@@ -113,7 +113,12 @@ class Aggregator {
       try {
         final tracks = await src.albumTracks(albumId);
         if (tracks.isNotEmpty) return tracks;
-      } catch (_) {/* уходим в фолбэк-поиск */}
+      } catch (e) {
+        // Не упёрлись в треклист альбома — уходим в фолбэк-поиск, но причину
+        // (протухший токен, изменение API Яндекса) сохраняем для диагностики.
+        Diagnostics.instance
+            .warn('aggregator', 'albumTracks($albumId) Яндекса упал: $e');
+      }
     }
     final q = '${track.artist} ${track.album ?? ''}'.trim();
     return q.isEmpty ? const [] : search(q);

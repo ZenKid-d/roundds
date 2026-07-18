@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/diagnostics.dart';
+import '../../domain/constants.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -41,9 +42,9 @@ class YoutubeMusicSource implements MusicSource {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
-  // Музыкальный трек по длительности: ~45 сек … 12 мин.
-  static const _minSec = 45;
-  static const _maxSec = 720;
+  // Музыкальный трек по длительности: ~45 сек … 12 мин (константы в domain/).
+  static const _minSec = minTrackSec;
+  static const _maxSec = maxTrackSec;
 
   /// Качество потока/загрузки: 0 — низкое, 1 — среднее, 2 — высокое.
   int streamQuality = 2;
@@ -428,7 +429,7 @@ class YoutubeMusicSource implements MusicSource {
       }
       return PlayableStream(
         uri: info.url,
-        expiresAt: DateTime.now().add(const Duration(minutes: 30)),
+        expiresAt: DateTime.now().add(defaultStreamExpiry),
       );
     } catch (e) {
       Diagnostics.instance
@@ -526,8 +527,11 @@ class YoutubeMusicSource implements MusicSource {
       await sink.close();
       sink = null;
       return true;
-    } catch (_) {
+    } catch (e, st) {
       // Не смогли — подчистим частичный файл и отдадим управление dio-пути.
+      // Логируем причину (раньше пустой catch скрывал, почему загрузка упала).
+      Diagnostics.instance
+          .warn('youtube', 'downloadTo через yt_explode упал: $e\n$st');
       try {
         await sink?.close();
       } catch (_) {}

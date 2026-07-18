@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/models/playlist.dart';
 import '../domain/models/track.dart';
+import 'diagnostics.dart';
 
 /// Локальная медиатека: история прослушивания и пользовательские плейлисты.
 /// Хранится в SharedPreferences как JSON (без codegen).
@@ -14,6 +15,10 @@ class LibraryController extends ChangeNotifier {
   }
 
   final SharedPreferences _prefs;
+
+  /// Сколько последних треков держим в истории прослушивания. Старые
+  /// вытесняются (FIFO) — история нужна для «недавнее», а не как архив.
+  static const int maxHistory = 50;
 
   final List<Track> _history = [];
   final List<PlaylistX> _playlists = [];
@@ -75,9 +80,22 @@ class LibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Безопасный поиск плейлиста по id. Возвращает null, если плейлиста нет —
+  /// например, когда его успели удалить между открытием меню и тапом по
+  /// действию (гонка UI). Все мутации плейлиста идут через этот метод и
+  /// молча no-op, чтобы не бросать StateError в рантайме.
+  PlaylistX? _findById(String id) {
+    for (final p in _playlists) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
   /// Убирает дубликаты треков в плейлисте (по uid и по «артист — название»).
+  /// Возвращает число удалённых дубликатов (0, если плейлист уже удалён).
   Future<int> removeDuplicates(String playlistId) async {
-    final pl = _playlists.firstWhere((e) => e.id == playlistId);
+    final pl = _findById(playlistId);
+    if (pl == null) return 0;
     final seenUid = <String>{};
     final seenName = <String>{};
     final before = pl.tracks.length;
@@ -215,7 +233,9 @@ class LibraryController extends ChangeNotifier {
   Future<void> pushHistory(Track t) async {
     _history.removeWhere((e) => e.uid == t.uid);
     _history.insert(0, t);
-    if (_history.length > 50) _history.removeRange(50, _history.length);
+    if (_history.length > maxHistory) {
+      _history.removeRange(maxHistory, _history.length);
+    }
     _statTrack[t.uid] = t;
     _statCount[t.uid] = (_statCount[t.uid] ?? 0) + 1;
     _invalidateStatCaches();
@@ -248,7 +268,8 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<void> renamePlaylist(String id, String name) async {
-    final pl = _playlists.firstWhere((e) => e.id == id);
+    final pl = _findById(id);
+    if (pl == null) return;
     pl.name = name;
     await _persistPlaylists();
     notifyListeners();
@@ -261,7 +282,8 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<void> addToPlaylist(String id, Track t) async {
-    final pl = _playlists.firstWhere((e) => e.id == id);
+    final pl = _findById(id);
+    if (pl == null) return;
     if (!pl.tracks.any((e) => e.uid == t.uid)) {
       pl.tracks.add(t);
       await _persistPlaylists();
@@ -270,7 +292,8 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<void> removeFromPlaylist(String id, Track t) async {
-    final pl = _playlists.firstWhere((e) => e.id == id);
+    final pl = _findById(id);
+    if (pl == null) return;
     pl.tracks.removeWhere((e) => e.uid == t.uid);
     await _persistPlaylists();
     notifyListeners();
@@ -288,21 +311,45 @@ class LibraryController extends ChangeNotifier {
       };
 
   /// Импорт (слияние) библиотеки из бэкапа.
+  ///
+  /// Битые записи (отсутствует id, не тот тип) пропускаем, а не роняем весь
+  /// импорт — так частично повреждённый бэкап восстановит что сможет. Причина
+  /// каждого пропуска пишется в диагностику.
   Future<void> importData(Map<String, dynamic> data) async {
+    var skipped = 0;
     for (final e in (data['playlists'] as List? ?? [])) {
-      final pl = PlaylistX.fromJson((e as Map).cast<String, dynamic>());
-      if (!_playlists.any((p) => p.id == pl.id)) _playlists.add(pl);
+      try {
+        final pl = PlaylistX.fromJson((e as Map).cast<String, dynamic>());
+        if (!_playlists.any((p) => p.id == pl.id)) _playlists.add(pl);
+      } catch (err) {
+        skipped++;
+        Diagnostics.instance.warn('library', 'Импорт: битый плейлист пропущен: $err');
+      }
     }
     for (final e in (data['liked'] as List? ?? [])) {
-      final t = Track.fromJson((e as Map).cast<String, dynamic>());
-      if (!_liked.any((x) => x.uid == t.uid)) _liked.insert(0, t);
+      try {
+        final t = Track.fromJson((e as Map).cast<String, dynamic>());
+        if (!_liked.any((x) => x.uid == t.uid)) _liked.insert(0, t);
+      } catch (err) {
+        skipped++;
+        Diagnostics.instance.warn('library', 'Импорт: битый лайк пропущен: $err');
+      }
     }
     for (final e in (data['stats'] as List? ?? [])) {
-      final m = (e as Map).cast<String, dynamic>();
-      final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
-      final c = (m['count'] as num?)?.toInt() ?? 0;
-      _statTrack[t.uid] = t;
-      _statCount[t.uid] = (_statCount[t.uid] ?? 0) + c;
+      try {
+        final m = (e as Map).cast<String, dynamic>();
+        final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
+        final c = (m['count'] as num?)?.toInt() ?? 0;
+        _statTrack[t.uid] = t;
+        _statCount[t.uid] = (_statCount[t.uid] ?? 0) + c;
+      } catch (err) {
+        skipped++;
+        Diagnostics.instance.warn('library', 'Импорт: битая запись stats пропущена: $err');
+      }
+    }
+    if (skipped > 0) {
+      Diagnostics.instance
+          .warn('library', 'Импорт завершён, пропущено битых записей: $skipped');
     }
     _invalidateStatCaches();
     await _persistPlaylists();

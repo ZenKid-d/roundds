@@ -4,6 +4,7 @@
 /// для real-time адаптации: скип/лайк меняют направление и хвост очереди.
 library;
 
+import '../../domain/constants.dart';
 import '../../domain/models/track.dart';
 import '../aggregator.dart';
 import '../recommendation_service.dart' show RecoRow;
@@ -63,9 +64,9 @@ class WaveEngine {
   /// долив буфера/скип).
   static const int _maxResolvePerGen = 18;
 
-  /// Границы длительности «музыкального трека».
-  static const int _minTrackSec = 45; // ниже — шортсы/клипы
-  static const int _maxTrackSec = 12 * 60; // выше — миксы/стримы/подкасты
+  /// Границы длительности «музыкального трека» (общие константы в domain/).
+  static const int _minTrackSec = minTrackSec;
+  static const int _maxTrackSec = maxTrackSec;
 
   /// Похоже ли на музыкальный трек, а не на обычное видео. Основной источник
   /// «видео» в волне — YouTube related (не всегда фильтрует по музыке), поэтому

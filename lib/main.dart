@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/diagnostics.dart';
 import 'core/downloads_controller.dart';
 import 'core/net/doh_http.dart';
 import 'core/net/doh_resolver.dart';
@@ -118,7 +119,12 @@ Future<void> main() async {
           Duration(milliseconds: posMs),
         ));
       }
-    } catch (_) {/* повреждённая сессия — игнорируем */}
+    } catch (e) {
+      // Повреждённая сессия (битый JSON / несовместимый формат после апдейта).
+      // Сбрасываем тихо, но записываем в диагностику, чтобы пользователь видел,
+      // почему «продолжить с места» не сработало.
+      Diagnostics.instance.warn('session', 'Сессия не восстановлена: $e');
+    }
   }
 
   runApp(

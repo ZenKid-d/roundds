@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/diagnostics.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/artwork.dart';
@@ -47,7 +48,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         for (final t in res) {
           byArtist.putIfAbsent(t.artist.toLowerCase(), () => t);
         }
-      } catch (_) {}
+      } catch (e) {
+        // Жанр не нашёлся в каком-то источнике — не повод валить онбординг,
+        // но запись в диагностику помогает понять, почему список артистов пуст.
+        Diagnostics.instance.warn('onboarding', 'Поиск жанра «$g» упал: $e');
+      }
       if (byArtist.length >= 48) break;
     }
     if (!mounted) return;
@@ -65,7 +70,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     List<Track> res;
     try {
       res = await ref.read(aggregatorProvider).search(q, perSource: 10);
-    } catch (_) {
+    } catch (e) {
+      Diagnostics.instance
+          .warn('onboarding', 'Поиск артистов «$q» упал: $e');
       res = const [];
     }
     if (!mounted) return;

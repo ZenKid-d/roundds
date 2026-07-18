@@ -157,7 +157,12 @@ class RoundsAudioHandler extends BaseAudioHandler {
         }),
       );
       prefs.setInt('last_position_ms', _player.position.inMilliseconds);
-    } catch (_) {}
+    } catch (e, st) {
+      // Сериализация сессии упала (битый трек в очереди, диск полный и т.п.).
+      // Не валить плеер, но записать причину — раньше это уходило в пустой catch.
+      Diagnostics.instance
+          .warn('session', 'Не удалось сохранить сессию: $e\n$st');
+    }
   }
 
   /// Восстанавливает прошлую сессию: ставит очередь и грузит текущий трек на

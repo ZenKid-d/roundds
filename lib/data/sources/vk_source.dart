@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
+import '../../domain/constants.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -174,7 +175,7 @@ class VkSource implements MusicSource {
     }
     return PlayableStream(
       uri: Uri.parse(url),
-      expiresAt: DateTime.now().add(const Duration(minutes: 30)),
+      expiresAt: DateTime.now().add(defaultStreamExpiry),
     );
   }
 

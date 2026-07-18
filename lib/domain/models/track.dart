@@ -51,18 +51,33 @@ class Track {
         'extra': extra,
       };
 
-  factory Track.fromJson(Map<String, dynamic> j) => Track(
-        id: j['id'] as String,
-        title: j['title'] as String? ?? '',
-        artist: j['artist'] as String? ?? '',
-        album: j['album'] as String?,
-        artworkUrl: j['artworkUrl'] as String?,
-        duration: j['durationMs'] != null
-            ? Duration(milliseconds: j['durationMs'] as int)
-            : null,
-        source: SourceTypeX.fromId(j['source'] as String? ?? 'youtube'),
-        extra: (j['extra'] as Map?)?.cast<String, dynamic>() ?? const {},
+  factory Track.fromJson(Map<String, dynamic> j) {
+    // Обязательное поле — без id трек не имеет uid и бесполезен для очереди/
+    // истории/плейлиста. Раньше `j['id'] as String` бросал непонятный TypeError
+    // на повреждённом бэкапе; теперь понятная FormatException для пользователя.
+    final id = j['id'];
+    if (id is! String || id.isEmpty) {
+      throw FormatException(
+        'Track.fromJson: поле "id" отсутствует или не строка (got ${id.runtimeType})',
+        j,
       );
+    }
+    // durationMs из JSON может прийти как int или double (зависит от источника
+    // сериализации); `as int` на double падал. Приводим через num.
+    final durMs = j['durationMs'];
+    return Track(
+      id: id,
+      title: j['title'] as String? ?? '',
+      artist: j['artist'] as String? ?? '',
+      album: j['album'] as String?,
+      artworkUrl: j['artworkUrl'] as String?,
+      duration: durMs == null
+          ? null
+          : Duration(milliseconds: (durMs as num).toInt()),
+      source: SourceTypeX.fromId(j['source'] as String? ?? 'youtube'),
+      extra: (j['extra'] as Map?)?.cast<String, dynamic>() ?? const {},
+    );
+  }
 
   @override
   bool operator ==(Object other) => other is Track && other.uid == uid;
