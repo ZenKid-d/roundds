@@ -11,6 +11,7 @@ import '../data/aggregator.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
+import 'queue_navigation.dart' show nextIndex, toRepeatMode;
 
 enum LoopMode { off, all, one }
 
@@ -648,34 +649,15 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   /// Следующий логический индекс с учётом repeat/shuffle/radio; null — конец.
-  int? _nextIndex() {
-    if (_queue.isEmpty) return null;
-    if (_repeat == LoopMode.one) return _index; // бесшовный повтор одного
-    int next;
-    if (_shuffle && _queue.length > 1) {
-      final curArtist = current?.artist.toLowerCase();
-      next = _index;
-      for (var attempt = 0; attempt < 6; attempt++) {
-        var n = _rng.nextInt(_queue.length - 1);
-        if (n >= _index) n += 1;
-        next = n;
-        if (curArtist == null ||
-            _queue[n].artist.toLowerCase() != curArtist) {
-          break;
-        }
-      }
-    } else {
-      next = _index + 1;
-    }
-    if (next >= _queue.length) {
-      if (_repeat == LoopMode.all) {
-        next = 0;
-      } else {
-        return null;
-      }
-    }
-    return next;
-  }
+  /// Делегирует в общую тестируемую функцию nextIndex() (раньше логика была
+  /// продублирована здесь и в _advance).
+  int? _nextIndex() => nextIndex(
+        queue: _queue,
+        index: _index,
+        shuffle: _shuffle,
+        repeat: toRepeatMode(_repeat.index),
+        rng: _rng,
+      );
 
   /// Догружает следующий трек в конец окна (буферизуется для бесшовности).
   Future<void> _appendNextGapless() async {
@@ -803,30 +785,17 @@ class RoundsAudioHandler extends BaseAudioHandler {
       await _load();
       return;
     }
-    int next;
-    if (_shuffle && _queue.length > 1) {
-      // Умное перемешивание: избегаем того же артиста подряд, если можно.
-      final curArtist = current?.artist.toLowerCase();
-      next = _index;
-      for (var attempt = 0; attempt < 6; attempt++) {
-        var n = _rng.nextInt(_queue.length - 1);
-        if (n >= _index) n += 1;
-        next = n;
-        if (curArtist == null ||
-            _queue[n].artist.toLowerCase() != curArtist) {
-          break;
-        }
-      }
-    } else {
-      next = _index + 1;
-    }
-    if (next >= _queue.length) {
-      if (_repeat == LoopMode.all) {
-        next = 0;
-      } else {
-        return;
-      }
-    }
+    // Делегируем выбор индекса в общую функцию (раньше shuffle-логика была
+    // продублирована здесь и в _nextIndex).
+    final ni = nextIndex(
+      queue: _queue,
+      index: _index,
+      shuffle: _shuffle,
+      repeat: toRepeatMode(_repeat.index),
+      rng: _rng,
+    );
+    if (ni == null) return; // конец очереди без повтора
+    final next = ni;
     _index = next;
     await _load();
   }
