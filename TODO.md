@@ -125,3 +125,16 @@
 ### 19. CI Integration Tests
 - [ ] Set up emulator in CI
 - [ ] Run integration tests on push
+
+### 20. i18n — IN PROGRESS (infra done, screens pending)
+- [x] flutter_localizations/intl + l10n.yaml + lib/l10n/app_ru.arb (source) +
+      app_en.arb (translation), MaterialApp wired to AppLocalizations
+- [x] Pilot screen migrated: app_drawer.dart (nav labels, service status)
+- [ ] home_screen.dart (478 lines — largest untouched, high visibility)
+- [ ] now_playing_screen.dart (663 lines)
+- [ ] library_screen.dart (1050 lines — largest in the app)
+- [ ] settings_screen.dart (886 lines)
+- [ ] remaining ~15 smaller screens/widgets with hardcoded RU strings
+- Each screen should land as its own commit + `dart analyze` + `flutter test`
+  pass before moving to the next — do not batch multiple large screens
+  into one unverified diff.

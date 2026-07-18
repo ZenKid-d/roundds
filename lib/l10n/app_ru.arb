@@ -43,5 +43,60 @@
   "serviceStatusError": "ошибка",
   "@serviceStatusError": {
     "description": "Статус источника: ошибка проверки готовности"
+  },
+  "loadErrorGeneric": "Не удалось загрузить: {error}",
+  "@loadErrorGeneric": {
+    "description": "Общая ошибка загрузки списка (альбом/артист/поиск)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "albumFallbackTitle": "Альбом",
+  "@albumFallbackTitle": {
+    "description": "Заголовок экрана альбома, когда у трека нет названия альбома"
+  },
+  "albumRadioTooltip": "Радио по альбому",
+  "@albumRadioTooltip": {
+    "description": "Подсказка кнопки запуска радио на экране альбома"
+  },
+  "albumTracksEmpty": "Треки альбома не найдены",
+  "@albumTracksEmpty": {
+    "description": "Пустое состояние: у альбома не нашлось треков"
+  },
+  "artistFollowingTooltip": "Вы подписаны",
+  "@artistFollowingTooltip": {
+    "description": "Подсказка кнопки подписки на артиста, когда уже подписаны"
+  },
+  "artistFollowTooltip": "Следить за артистом",
+  "@artistFollowTooltip": {
+    "description": "Подсказка кнопки подписки на артиста, когда ещё не подписаны"
+  },
+  "artistUnfollowSnack": "Отписка от «{artist}»",
+  "@artistUnfollowSnack": {
+    "description": "Снекбар после отписки от артиста",
+    "placeholders": {
+      "artist": {
+        "type": "String"
+      }
+    }
+  },
+  "artistFollowSnack": "Вы следите за «{artist}»",
+  "@artistFollowSnack": {
+    "description": "Снекбар после подписки на артиста",
+    "placeholders": {
+      "artist": {
+        "type": "String"
+      }
+    }
+  },
+  "artistRadioTooltip": "Радио по артисту",
+  "@artistRadioTooltip": {
+    "description": "Подсказка кнопки запуска радио на экране артиста"
+  },
+  "artistTracksEmpty": "Ничего не найдено",
+  "@artistTracksEmpty": {
+    "description": "Пустое состояние: у артиста не нашлось треков"
   }
 }

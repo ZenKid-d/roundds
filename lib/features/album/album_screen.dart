@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../domain/models/track.dart';
+import '../../l10n/gen/app_localizations.dart';
 
 /// Треклист альбома. Ключ семьи — трек-зерно (по нему агрегатор знает источник
 /// и albumId). Нативно грузится у Яндекса; у остальных — фолбэк на поиск.
@@ -24,14 +25,16 @@ class AlbumScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tracks = ref.watch(_albumTracksProvider(seed));
-    final title = (seed.album ?? '').isNotEmpty ? seed.album! : 'Альбом';
+    final l10n = AppLocalizations.of(context)!;
+    final title =
+        (seed.album ?? '').isNotEmpty ? seed.album! : l10n.albumFallbackTitle;
     return Scaffold(
       appBar: AppBar(
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: const Icon(Icons.radio),
-            tooltip: 'Радио по альбому',
+            tooltip: l10n.albumRadioTooltip,
             onPressed: () {
               final list = tracks.value;
               if (list != null && list.isNotEmpty) {
@@ -47,14 +50,14 @@ class AlbumScreen extends ConsumerWidget {
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Не удалось загрузить: $e',
+            child: Text(l10n.loadErrorGeneric(e.toString()),
                 style: TextStyle(color: AppColors.white45)),
           ),
         ),
         data: (list) {
           if (list.isEmpty) {
             return Center(
-              child: Text('Треки альбома не найдены',
+              child: Text(l10n.albumTracksEmpty,
                   style: TextStyle(color: AppColors.white45)),
             );
           }

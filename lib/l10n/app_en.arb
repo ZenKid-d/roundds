@@ -10,5 +10,15 @@
   "serviceStatusConfigure": "set up",
   "serviceStatusOff": "off",
   "serviceStatusLoading": "…",
-  "serviceStatusError": "error"
+  "serviceStatusError": "error",
+  "loadErrorGeneric": "Failed to load: {error}",
+  "albumFallbackTitle": "Album",
+  "albumRadioTooltip": "Radio from this album",
+  "albumTracksEmpty": "No tracks found for this album",
+  "artistFollowingTooltip": "Following",
+  "artistFollowTooltip": "Follow artist",
+  "artistUnfollowSnack": "Unfollowed «{artist}»",
+  "artistFollowSnack": "Now following «{artist}»",
+  "artistRadioTooltip": "Radio from this artist",
+  "artistTracksEmpty": "Nothing found"
 }

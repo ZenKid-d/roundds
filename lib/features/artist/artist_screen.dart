@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../domain/models/track.dart';
+import '../../l10n/gen/app_localizations.dart';
 
 final _artistTracksProvider =
     FutureProvider.family<List<Track>, String>((ref, artist) async {
@@ -21,24 +22,27 @@ class ArtistScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tracks = ref.watch(_artistTracksProvider(artist));
     final following = ref.watch(libraryProvider).isFollowing(artist);
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
         title: Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: Icon(following ? Icons.notifications_active : Icons.notifications_none),
-            tooltip: following ? 'Вы подписаны' : 'Следить за артистом',
+            tooltip: following
+                ? l10n.artistFollowingTooltip
+                : l10n.artistFollowTooltip,
             onPressed: () {
               ref.read(libraryProvider).toggleFollow(artist);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(following
-                      ? 'Отписка от «$artist»'
-                      : 'Вы следите за «$artist»')));
+                      ? l10n.artistUnfollowSnack(artist)
+                      : l10n.artistFollowSnack(artist))));
             },
           ),
           IconButton(
             icon: const Icon(Icons.radio),
-            tooltip: 'Радио по артисту',
+            tooltip: l10n.artistRadioTooltip,
             onPressed: () {
               final list = tracks.value;
               if (list != null && list.isNotEmpty) {
@@ -54,14 +58,14 @@ class ArtistScreen extends ConsumerWidget {
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Не удалось загрузить: $e',
+            child: Text(l10n.loadErrorGeneric(e.toString()),
                 style: TextStyle(color: AppColors.white45)),
           ),
         ),
         data: (list) {
           if (list.isEmpty) {
             return Center(
-              child: Text('Ничего не найдено',
+              child: Text(l10n.artistTracksEmpty,
                   style: TextStyle(color: AppColors.white45)),
             );
           }
