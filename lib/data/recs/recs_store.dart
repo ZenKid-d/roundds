@@ -10,6 +10,7 @@ import 'recs_db.dart';
 import 'recs_dedup.dart';
 import 'recs_signals.dart';
 import 'taste_profile.dart';
+import 'wave_constraints.dart';
 
 /// Recs v2 — высокоуровневый стор поверх [RecsDb]: логирование событий,
 /// дизлайки (hard-фильтр), cooldown, одноразовый импорт из библиотеки.
@@ -72,23 +73,38 @@ class RecsStore extends ChangeNotifier {
   void recordLike(Track t) => unawaited(_insert(t, SignalKind.like));
   void recordRepeat(Track t) => unawaited(_insert(t, SignalKind.repeat));
 
+  /// Короткий cooldown для жёсткого скипа (1 день) вместо полного окна.
+  static const _hardSkipCooldownSec = 86400;
+
+  /// На сколько «сдвинуть в прошлое» отметку проигрывания при жёстком скипе,
+  /// чтобы окно cooldown ([WaveSequencer]) истекло раньше — ориентир на
+  /// дефолтный balanced-режим. В «Любимом» (окно короче) скип-cooldown выродится
+  /// в 0, что для мягкого режима приемлемо. Так не заводим отдельную колонку
+  /// под тип исхода.
+  static final _hardSkipBackdateSec =
+      WaveConstraints.balanced.cooldownDays * 86400 - _hardSkipCooldownSec;
+
   /// Событие завершения трека: классифицируем скип/дослушал, обновляем cooldown.
   ///
   /// Cooldown ставим при ЛЮБОМ исходе, включая жёсткий скип. Раньше жёсткий
   /// скип его не трогал (идея была «не считать за прослушивание») — но это
   /// значило, что трек, который бросили через 10 секунд, вообще не получал
-  /// защиты от повтора и мог тут же снова всплыть в волне на следующей
-  /// генерации/сессии. Именно то, что скипнули — веский повод не показывать
-  /// снова в первую очередь.
+  /// защиты от повтора и мог тут же снова всплыть в волне. Однако полный
+  /// cooldown (как у дослушанного) хоронит на неделю и случайный мис-тап —
+  /// поэтому жёсткому скипу даём КОРОТКИЙ cooldown (~1 день): не мозолит глаза
+  /// сразу, но и не пропадает надолго.
   void recordPlayback(Track t, int playedMs, int durMs) {
     final kind =
         RecsSignals.classifyPlayback(playedMs: playedMs, durationMs: durMs);
     unawaited(() async {
       await _insert(t, kind, playedMs: playedMs, durMs: durMs);
+      final ts = kind == SignalKind.skipHard
+          ? _nowSec - _hardSkipBackdateSec
+          : _nowSec;
       try {
         await _sql.insert(
           'cooldowns',
-          {'track_key': keyFor(t), 'last_played_ts': _nowSec},
+          {'track_key': keyFor(t), 'last_played_ts': ts},
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       } catch (_) {}

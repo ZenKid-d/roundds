@@ -98,6 +98,9 @@ class SoundcloudSource implements MusicSource {
   }
 
   @override
+  bool get supportsPaging => true;
+
+  @override
   Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     await _ensureClientId();
     try {

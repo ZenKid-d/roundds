@@ -27,6 +27,9 @@ class FakeSource implements MusicSource {
   Future<bool> get isReady async => ready;
 
   @override
+  bool get supportsPaging => true;
+
+  @override
   Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     searchCalls++;
     return results;

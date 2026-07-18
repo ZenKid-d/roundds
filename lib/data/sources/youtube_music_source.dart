@@ -63,6 +63,11 @@ class YoutubeMusicSource implements MusicSource {
   @override
   Future<bool> get isReady async => true;
 
+  // Поиск YouTube не поддерживает continuation-токены (page игнорируется) —
+  // page > 0 вернул бы ту же первую страницу. См. [search].
+  @override
+  bool get supportsPaging => false;
+
   @override
   Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     // page игнорируется: постраничная выдача (continuation-токены) для

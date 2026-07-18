@@ -19,6 +19,12 @@ abstract class MusicSource {
   /// вызывающий код должен сам дедуплицировать и остановиться.
   Future<List<Track>> search(String query, {int limit = 20, int page = 0});
 
+  /// Отдаёт ли источник реально НОВЫЕ треки при page > 0. По умолчанию да
+  /// (SoundCloud/VK/Яндекс). YouTube переопределяет в false: его поиск не
+  /// умеет continuation-токены, поэтому page > 0 повторит первую страницу —
+  /// пагинатору незачем дёргать сеть за заведомо теми же результатами.
+  bool get supportsPaging => true;
+
   /// Лента/подборка для главного экрана (charts / новинки / популярное).
   Future<List<Track>> feed({int limit = 20});
 
