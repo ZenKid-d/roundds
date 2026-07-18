@@ -23,13 +23,19 @@ class RecsStore extends ChangeNotifier {
   final Set<String> _dislikedKeys = {};
   final List<Track> _disliked = [];
 
+  // Зеркало таблицы cooldowns в памяти: генерация волны дёргает cooldownMap()
+  // по несколько раз подряд (candidates providers + wave_engine), а полный
+  // SELECT по всей таблице на каждый вызов — лишняя работа. Загружается один
+  // раз в init(), дальше обновляется точечно при markPlayedInWave/recordPlayback.
+  final Map<String, int> _cooldownMirror = {};
+
   Set<String> get dislikedKeys => Set.unmodifiable(_dislikedKeys);
   List<Track> get dislikedTracks => List.unmodifiable(_disliked);
 
   static String keyFor(Track t) => RecsDedup.normKey(t.artist, t.title);
   int get _nowSec => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-  /// Загружает дизлайки в память (вызывается один раз при старте).
+  /// Загружает дизлайки и cooldown-зеркало в память (вызывается один раз при старте).
   Future<void> init() async {
     try {
       final rows = await _sql.query('dislikes', orderBy: 'ts DESC');
@@ -47,6 +53,13 @@ class RecsStore extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {/* БД недоступна — работаем без дизлайков */}
+    try {
+      final rows = await _sql.query('cooldowns');
+      _cooldownMirror
+        ..clear()
+        ..addEntries(rows.map((r) => MapEntry(
+            r['track_key'] as String, r['last_played_ts'] as int)));
+    } catch (_) {/* БД недоступна — работаем без cooldown-фильтра */}
     unawaited(runMaintenance());
   }
 
@@ -116,11 +129,12 @@ class RecsStore extends ChangeNotifier {
   void recordPlayback(Track t, int playedMs, int durMs) {
     final kind =
         RecsSignals.classifyPlayback(playedMs: playedMs, durationMs: durMs);
+    final ts = kind == SignalKind.skipHard
+        ? _nowSec - _hardSkipBackdateSec
+        : _nowSec;
+    _cooldownMirror[keyFor(t)] = ts;
     unawaited(() async {
       await _insert(t, kind, playedMs: playedMs, durMs: durMs);
-      final ts = kind == SignalKind.skipHard
-          ? _nowSec - _hardSkipBackdateSec
-          : _nowSec;
       try {
         await _sql.insert(
           'cooldowns',
@@ -255,26 +269,22 @@ class RecsStore extends ChangeNotifier {
 
   // --- cooldown (anti-repetition) ---
 
-  /// `track_key → last_played_ts` для скоринга/фильтра повторов.
-  Future<Map<String, int>> cooldownMap() async {
-    try {
-      final rows = await _sql.query('cooldowns');
-      return {
-        for (final r in rows)
-          (r['track_key'] as String): (r['last_played_ts'] as int),
-      };
-    } catch (_) {
-      return const {};
-    }
-  }
+  /// `track_key → last_played_ts` для скоринга/фильтра повторов. Отдаёт
+  /// зеркало из памяти (см. [_cooldownMirror]) — не бьёт в SQLite на каждый
+  /// вызов, а генерация волны вызывает его несколько раз подряд.
+  Future<Map<String, int>> cooldownMap() async =>
+      Map.unmodifiable(_cooldownMirror);
 
   /// Отмечает трек как прозвучавший в волне сейчас (для cooldown-таблицы).
   void markPlayedInWave(Track t) {
+    final key = keyFor(t);
+    final ts = _nowSec;
+    _cooldownMirror[key] = ts;
     unawaited(() async {
       try {
         await _sql.insert(
           'cooldowns',
-          {'track_key': keyFor(t), 'last_played_ts': _nowSec},
+          {'track_key': key, 'last_played_ts': ts},
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       } catch (_) {}
