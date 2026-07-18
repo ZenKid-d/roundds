@@ -28,6 +28,12 @@ class Aggregator {
   DateTime? _feedAt;
   final Map<String, ({DateTime at, List<Track> tracks})> _searchCache = {};
 
+  // Дедуп одновременных запросов: быстрый ввод в поиске или параллельные
+  // экраны могут запросить один и тот же query/фид, пока первый запрос ещё
+  // летит по сети. Вместо повторного похода в сеть отдаём тот же Future.
+  final Map<String, Future<List<Track>>> _searchInFlight = {};
+  Future<List<Track>>? _feedInFlight;
+
   Set<SourceType> get enabled => _enabled;
   void setEnabled(Set<SourceType> e) {
     _enabled = e;
@@ -51,54 +57,79 @@ class Aggregator {
 
   /// Поиск по всем включённым источникам, результаты «переплетаются»
   /// (round-robin), чтобы лента не была занята одним сервисом.
-  Future<List<Track>> search(String query, {int perSource = 15}) async {
+  Future<List<Track>> search(String query, {int perSource = 15}) {
     final key = '$query::$perSource';
     final hit = _searchCache[key];
     if (hit != null && DateTime.now().difference(hit.at) < _searchTtl) {
-      return hit.tracks;
+      return Future.value(hit.tracks);
     }
-    final futures = _active.map((s) async {
-      try {
-        return await s.search(query, limit: perSource);
-      } catch (e) {
-        _logDnsBlock(e);
-        Diagnostics.instance.warn('agg.search', '${s.type.id} «$query»: $e');
-        return <Track>[];
-      }
-    });
-    final lists = await Future.wait(futures);
-    final result = _interleave(lists);
-    if (result.isNotEmpty) {
-      _searchCache[key] = (at: DateTime.now(), tracks: result);
-      if (_searchCache.length > 32) {
-        _searchCache.remove(_searchCache.keys.first);
-      }
-    }
-    return result;
+    final inFlight = _searchInFlight[key];
+    if (inFlight != null) return inFlight;
+    final future = _runSearch(query, perSource, key);
+    _searchInFlight[key] = future;
+    return future;
   }
 
-  Future<List<Track>> feed({int perSource = 12}) async {
+  Future<List<Track>> _runSearch(
+      String query, int perSource, String key) async {
+    try {
+      final futures = _active.map((s) async {
+        try {
+          return await s.search(query, limit: perSource);
+        } catch (e) {
+          _logDnsBlock(e);
+          Diagnostics.instance.warn('agg.search', '${s.type.id} «$query»: $e');
+          return <Track>[];
+        }
+      });
+      final lists = await Future.wait(futures);
+      final result = _interleave(lists);
+      if (result.isNotEmpty) {
+        _searchCache[key] = (at: DateTime.now(), tracks: result);
+        if (_searchCache.length > 32) {
+          _searchCache.remove(_searchCache.keys.first);
+        }
+      }
+      return result;
+    } finally {
+      _searchInFlight.remove(key);
+    }
+  }
+
+  Future<List<Track>> feed({int perSource = 12}) {
     final cached = _feedCache;
     final at = _feedAt;
     if (cached != null && at != null &&
         DateTime.now().difference(at) < _feedTtl) {
-      return cached;
+      return Future.value(cached);
     }
-    final futures = _active.map((s) async {
-      try {
-        return await s.feed(limit: perSource);
-      } catch (e) {
-        Diagnostics.instance.warn('agg.feed', '${s.type.id}: $e');
-        return <Track>[];
+    final inFlight = _feedInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _runFeed(perSource);
+    _feedInFlight = future;
+    return future;
+  }
+
+  Future<List<Track>> _runFeed(int perSource) async {
+    try {
+      final futures = _active.map((s) async {
+        try {
+          return await s.feed(limit: perSource);
+        } catch (e) {
+          Diagnostics.instance.warn('agg.feed', '${s.type.id}: $e');
+          return <Track>[];
+        }
+      });
+      final lists = await Future.wait(futures);
+      final result = _interleave(lists);
+      if (result.isNotEmpty) {
+        _feedCache = result;
+        _feedAt = DateTime.now();
       }
-    });
-    final lists = await Future.wait(futures);
-    final result = _interleave(lists);
-    if (result.isNotEmpty) {
-      _feedCache = result;
-      _feedAt = DateTime.now();
+      return result;
+    } finally {
+      _feedInFlight = null;
     }
-    return result;
   }
 
   /// Треклист альбома, к которому принадлежит [track]. Нативно умеет Яндекс

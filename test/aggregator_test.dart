@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roundds/data/aggregator.dart';
 import 'package:roundds/domain/models/playable_stream.dart';
@@ -252,6 +254,69 @@ void main() {
       expect(yt.searchCalls, 2);
     });
   });
+
+  group('Aggregator — дедуп одновременных запросов', () {
+    test('два параллельных search() с тем же query бьют источник один раз',
+        () async {
+      final yt = _DelayedSource(SourceType.youtube,
+          results: [track(SourceType.youtube, '1')]);
+      final agg = Aggregator({SourceType.youtube: yt},
+          enabled: {SourceType.youtube});
+
+      final f1 = agg.search('q');
+      final f2 = agg.search('q'); // стартует, пока f1 ещё не резолвился
+      yt.complete();
+      final r1 = await f1;
+      final r2 = await f2;
+      expect(yt.searchCalls, 1);
+      expect(r1.map((t) => t.uid), r2.map((t) => t.uid));
+    });
+
+    test('разные query не дедупятся друг с другом', () async {
+      final yt = _DelayedSource(SourceType.youtube,
+          results: [track(SourceType.youtube, '1')]);
+      final agg = Aggregator({SourceType.youtube: yt},
+          enabled: {SourceType.youtube});
+
+      final f1 = agg.search('a');
+      final f2 = agg.search('b');
+      yt.complete();
+      await f1;
+      await f2;
+      expect(yt.searchCalls, 2);
+    });
+
+    test('после завершения in-flight запроса следующий вызов бьёт источник снова',
+        () async {
+      final yt = _DelayedSource(SourceType.youtube, results: const []);
+      final agg = Aggregator({SourceType.youtube: yt},
+          enabled: {SourceType.youtube});
+
+      final f1 = agg.search('q');
+      yt.complete();
+      await f1;
+      // Пустой результат не кэшируется — но и не должен залипнуть в in-flight.
+      yt.reset();
+      final f2 = agg.search('q');
+      yt.complete();
+      await f2;
+      expect(yt.searchCalls, 2);
+    });
+
+    test('два параллельных feed() бьют источник один раз', () async {
+      final yt = _DelayedSource(SourceType.youtube,
+          results: [track(SourceType.youtube, '1')]);
+      final agg = Aggregator({SourceType.youtube: yt},
+          enabled: {SourceType.youtube});
+
+      final f1 = agg.feed();
+      final f2 = agg.feed();
+      yt.complete();
+      await f1;
+      await f2;
+      expect(yt.feedCalls, 1);
+    });
+  });
 }
 
 /// Источник, у которого падает поиск (проверяем устойчивость агрегатора).
@@ -261,5 +326,31 @@ class _ThrowingSearchSource extends FakeSource {
   @override
   Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
     throw Exception('search failed');
+  }
+}
+
+/// Источник, который зависает до вызова [complete] — нужен, чтобы гарантированно
+/// поймать момент, когда второй параллельный запрос ещё застаёт первый «в полёте».
+class _DelayedSource extends FakeSource {
+  _DelayedSource(super.type, {super.results});
+
+  Completer<void> _gate = Completer<void>();
+
+  void complete() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  void reset() => _gate = Completer<void>();
+
+  @override
+  Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
+    await _gate.future;
+    return super.search(query, limit: limit, page: page);
+  }
+
+  @override
+  Future<List<Track>> feed({int limit = 20}) async {
+    await _gate.future;
+    return super.feed(limit: limit);
   }
 }
