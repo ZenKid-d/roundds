@@ -111,7 +111,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
         children: [
           SwitchListTile(
             value: _enabled,
-            activeColor: accent,
+            activeThumbColor: accent,
             title: const Text('Включить эквалайзер'),
             onChanged: (v) {
               _eq.setEnabled(v);

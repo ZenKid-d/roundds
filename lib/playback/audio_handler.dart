@@ -772,7 +772,8 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex -= 1;
+    // onReorderItem уже корректирует newIndex за перемещённый элемент,
+    // ручная корректировка (как у старого onReorder) здесь не нужна.
     final t = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, t);
     if (_index == oldIndex) _index = newIndex;

@@ -4,8 +4,14 @@ linter:
   rules:
     prefer_const_constructors: true
     prefer_const_declarations: true
-    avoid_print: false
+    # avoid_print включён (true из flutter.yaml): print() в проде — это
+    # забытый отладочный вывод. Логирование должно идти через Diagnostics.
+    avoid_print: true
 
 analyzer:
   errors:
-    deprecated_member_use: ignore
+    # deprecated_member_use НЕ игнорируем: приложение построено на
+    # неофициальных/реверс-инжинирных API (YT InnerTube, Yandex signing,
+    # SoundCloud client_id, VK Kate client_id). Сигналы устаревания от
+    # upstream-пакетов — раннее предупреждение о грядущей поломке.
+    deprecated_member_use: warning

@@ -1030,7 +1030,7 @@ class _QueueView extends ConsumerWidget {
         Expanded(
           child: ReorderableListView.builder(
             itemCount: queue.length,
-            onReorder: pc.reorderQueue,
+            onReorderItem: pc.reorderQueue,
             itemBuilder: (_, i) {
               final t = queue[i];
               return TrackRow(
