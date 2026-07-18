@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any # версию диктует flutter_localizations из текущего Flutter SDK
 
   # State
   flutter_riverpod: ^2.5.1
@@ -84,3 +87,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true

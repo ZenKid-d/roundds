@@ -1,0 +1,47 @@
+{
+  "@@locale": "ru",
+  "appTagline": "v0.1 · единый плеер",
+  "@appTagline": {
+    "description": "Подзаголовок под названием приложения в боковом меню"
+  },
+  "navHome": "Главная",
+  "@navHome": {
+    "description": "Пункт навигации: главный экран"
+  },
+  "navSearch": "Поиск",
+  "@navSearch": {
+    "description": "Пункт навигации: поиск"
+  },
+  "navLibrary": "Медиатека",
+  "@navLibrary": {
+    "description": "Пункт навигации: медиатека"
+  },
+  "navSettings": "Настройки",
+  "@navSettings": {
+    "description": "Пункт навигации: настройки"
+  },
+  "drawerServicesHeader": "СЕРВИСЫ",
+  "@drawerServicesHeader": {
+    "description": "Заголовок секции со списком источников в боковом меню"
+  },
+  "serviceStatusReady": "готов",
+  "@serviceStatusReady": {
+    "description": "Статус источника в боковом меню: подключён и работает"
+  },
+  "serviceStatusConfigure": "настроить",
+  "@serviceStatusConfigure": {
+    "description": "Статус источника: включён, но не настроен (нет токена)"
+  },
+  "serviceStatusOff": "выкл",
+  "@serviceStatusOff": {
+    "description": "Статус источника: выключен в настройках"
+  },
+  "serviceStatusLoading": "…",
+  "@serviceStatusLoading": {
+    "description": "Статус источника: идёт проверка готовности"
+  },
+  "serviceStatusError": "ошибка",
+  "@serviceStatusError": {
+    "description": "Статус источника: ошибка проверки готовности"
+  }
+}

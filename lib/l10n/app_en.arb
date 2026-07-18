@@ -1,0 +1,14 @@
+{
+  "@@locale": "en",
+  "appTagline": "v0.1 · unified player",
+  "navHome": "Home",
+  "navSearch": "Search",
+  "navLibrary": "Library",
+  "navSettings": "Settings",
+  "drawerServicesHeader": "SERVICES",
+  "serviceStatusReady": "ready",
+  "serviceStatusConfigure": "set up",
+  "serviceStatusOff": "off",
+  "serviceStatusLoading": "…",
+  "serviceStatusError": "error"
+}

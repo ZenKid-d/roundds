@@ -5,6 +5,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../shell/home_shell.dart';
 
 class AppDrawer extends ConsumerWidget {
@@ -17,6 +18,7 @@ class AppDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = Theme.of(context).colorScheme.primary;
     final settings = ref.watch(settingsProvider);
+    final l10n = AppLocalizations.of(context)!;
 
     return Drawer(
       width: 268,
@@ -41,39 +43,39 @@ class AppDrawer extends ConsumerWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 12, top: 2),
-                child: Text('v0.1 · единый плеер',
+                child: Text(l10n.appTagline,
                     style:
                         TextStyle(fontSize: 11, color: AppColors.white45)),
               ),
               const SizedBox(height: 18),
               _NavItem(
                   icon: Icons.home_filled,
-                  label: 'Главная',
+                  label: l10n.navHome,
                   active: current == AppSection.home,
                   accent: accent,
                   onTap: () => onSelect(AppSection.home)),
               _NavItem(
                   icon: Icons.search,
-                  label: 'Поиск',
+                  label: l10n.navSearch,
                   active: current == AppSection.search,
                   accent: accent,
                   onTap: () => onSelect(AppSection.search)),
               _NavItem(
                   icon: Icons.library_music,
-                  label: 'Медиатека',
+                  label: l10n.navLibrary,
                   active: current == AppSection.library,
                   accent: accent,
                   onTap: () => onSelect(AppSection.library)),
               _NavItem(
                   icon: Icons.settings,
-                  label: 'Настройки',
+                  label: l10n.navSettings,
                   active: current == AppSection.settings,
                   accent: accent,
                   onTap: () => onSelect(AppSection.settings)),
               const SizedBox(height: 22),
               Padding(
                 padding: const EdgeInsets.only(left: 12, bottom: 8),
-                child: Text('СЕРВИСЫ',
+                child: Text(l10n.drawerServicesHeader,
                     style: TextStyle(
                         fontSize: 10.5,
                         letterSpacing: 1.2,
@@ -143,12 +145,15 @@ class _ServiceRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ready = ref.watch(sourceReadyProvider(source));
+    final l10n = AppLocalizations.of(context)!;
     final (label, color) = switch (ready) {
-      AsyncData(value: true) => ('готов', AppColors.success),
-      AsyncData(value: false) =>
-        (enabled ? 'настроить' : 'выкл', AppColors.white45),
-      AsyncLoading() => ('…', AppColors.white45),
-      _ => ('ошибка', AppColors.danger),
+      AsyncData(value: true) => (l10n.serviceStatusReady, AppColors.success),
+      AsyncData(value: false) => (
+          enabled ? l10n.serviceStatusConfigure : l10n.serviceStatusOff,
+          AppColors.white45
+        ),
+      AsyncLoading() => (l10n.serviceStatusLoading, AppColors.white45),
+      _ => (l10n.serviceStatusError, AppColors.danger),
     };
 
     return Padding(
