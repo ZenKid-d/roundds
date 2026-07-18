@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/playlist_actions.dart' show showAddToPlaylistSheet;
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_settings.dart';
@@ -385,7 +386,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             }),
         IconButton(
             icon: Icon(Icons.add_circle_outline, color: AppColors.white60),
-            onPressed: () => _addToPlaylist(context, ref, track)),
+            onPressed: () => showAddToPlaylistSheet(context, ref, track)),
         IconButton(
             icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
                 color: liked ? accent : AppColors.white60),
@@ -443,42 +444,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  void _addToPlaylist(BuildContext context, WidgetRef ref, Track track) {
-    final lib = ref.read(libraryProvider);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface1,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Добавить в плейлист',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            ),
-            if (lib.playlists.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('Сначала создайте плейлист в Медиатеке.',
-                    style: TextStyle(color: AppColors.white45)),
-              ),
-            for (final pl in lib.playlists)
-              ListTile(
-                leading: const Icon(Icons.playlist_add),
-                title: Text(pl.name),
-                onTap: () {
-                  lib.addToPlaylist(pl.id, track);
-                  Navigator.pop(context);
-                  _todo(context, 'Добавлено в «${pl.name}»');
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _errorBox(
       BuildContext context, WidgetRef ref, Track track, String error) {
     return Padding(
@@ -486,15 +451,15 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFFE24B4A).withValues(alpha: 0.12),
+          color: AppColors.danger.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(14),
           border:
-              Border.all(color: const Color(0xFFE24B4A).withValues(alpha: 0.3)),
+              Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
             const Icon(Icons.error_outline,
-                color: Color(0xFFE24B4A), size: 18),
+                color: AppColors.danger, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(error,
@@ -688,11 +653,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         ),
       ),
     );
-  }
-
-  void _todo(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   static String _fmt(Duration d) {

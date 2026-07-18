@@ -506,7 +506,7 @@ class _LikedView extends ConsumerWidget {
           children: [
             TrackDownloadStatus(liked[i]),
             IconButton(
-              icon: const Icon(Icons.favorite, color: Color(0xFFE24B4A)),
+              icon: const Icon(Icons.favorite, color: AppColors.danger),
               onPressed: () => ref.read(libraryProvider).toggleLike(liked[i]),
             ),
           ],

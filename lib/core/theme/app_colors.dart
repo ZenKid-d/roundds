@@ -23,6 +23,12 @@ class AppColors {
   /// Жёлтый «что-то не так» — акцент при ошибке (трек не играет и т.п.).
   static const warning = Color(0xFFFFD23F);
 
+  /// Семантические цвета для статусов. Раньше те же значения (0xFF43E08A,
+  /// 0xFFE24B4A) были захардкожены в 6+ файлах — теперь единый источник
+  /// правды, чтобы правка тона подхватилась везде.
+  static const success = Color(0xFF43E08A); // «готов», «токен сохранён», like active
+  static const danger = Color(0xFFE24B4A); // ошибка, дизлайк, risk-баннер
+
   // Цвета сервисов (используются и в SourceType).
   static const youtube = Color(0xFFFF0000);
   static const soundcloud = Color(0xFFFF5500);

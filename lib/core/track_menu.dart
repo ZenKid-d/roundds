@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'playlist_actions.dart' show showAddToPlaylistSheet;
 import 'providers.dart';
 import 'share_card.dart';
 import 'theme/app_colors.dart';
@@ -83,14 +84,14 @@ Future<void> showTrackMenu(
             title: const Text('Добавить в плейлист'),
             onTap: () {
               Navigator.pop(sheetCtx);
-              _addToPlaylist(context, ref, track);
+              showAddToPlaylistSheet(context, ref, track);
             },
           ),
           Consumer(builder: (_, r, __) {
             final liked = r.watch(libraryProvider).isLiked(track);
             return ListTile(
               leading: Icon(liked ? Icons.favorite : Icons.favorite_border,
-                  color: liked ? const Color(0xFFE24B4A) : null),
+                  color: liked ? AppColors.danger : null),
               title: Text(liked ? 'Убрать из избранного' : 'В избранное'),
               onTap: () {
                 r.read(libraryProvider).toggleLike(track);
@@ -145,75 +146,6 @@ Future<void> showTrackMenu(
           ),
         ],
       ),
-    ),
-  );
-}
-
-Future<void> _addToPlaylist(
-    BuildContext context, WidgetRef ref, Track track) async {
-  final lib = ref.read(libraryProvider);
-  await showModalBottomSheet(
-    context: context,
-    backgroundColor: AppColors.surface1,
-    builder: (sheetCtx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Добавить в плейлист',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: const Text('Новый плейлист'),
-            onTap: () async {
-              Navigator.pop(sheetCtx);
-              final name = await _askName(context);
-              if (name != null && name.isNotEmpty) {
-                final pl = await lib.createPlaylist(name);
-                await lib.addToPlaylist(pl.id, track);
-                if (context.mounted) _snack(context, 'Добавлено в «$name»');
-              }
-            },
-          ),
-          for (final pl in lib.playlists)
-            ListTile(
-              leading: const Icon(Icons.queue_music),
-              title: Text(pl.name),
-              subtitle: Text('${pl.tracks.length} треков',
-                  style: TextStyle(color: AppColors.white45, fontSize: 12)),
-              onTap: () {
-                lib.addToPlaylist(pl.id, track);
-                Navigator.pop(sheetCtx);
-                _snack(context, 'Добавлено в «${pl.name}»');
-              },
-            ),
-        ],
-      ),
-    ),
-  );
-}
-
-Future<String?> _askName(BuildContext context) {
-  final c = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    builder: (_) => AlertDialog(
-      backgroundColor: AppColors.surface2,
-      title: const Text('Новый плейлист'),
-      content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Название')),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена')),
-        FilledButton(
-            onPressed: () => Navigator.pop(context, c.text.trim()),
-            child: const Text('Создать')),
-      ],
     ),
   );
 }

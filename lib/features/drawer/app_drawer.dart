@@ -144,11 +144,11 @@ class _ServiceRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ready = ref.watch(sourceReadyProvider(source));
     final (label, color) = switch (ready) {
-      AsyncData(value: true) => ('готов', const Color(0xFF43E08A)),
+      AsyncData(value: true) => ('готов', AppColors.success),
       AsyncData(value: false) =>
         (enabled ? 'настроить' : 'выкл', AppColors.white45),
       AsyncLoading() => ('…', AppColors.white45),
-      _ => ('ошибка', const Color(0xFFE24B4A)),
+      _ => ('ошибка', AppColors.danger),
     };
 
     return Padding(

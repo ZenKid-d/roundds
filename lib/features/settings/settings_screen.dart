@@ -8,18 +8,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../core/providers.dart';
+import '../../core/routing/app_router.dart' show Routes;
 import '../../core/theme/app_colors.dart';
 import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../domain/models/source_type.dart';
-import '../stats/stats_screen.dart';
-import 'appearance_screen.dart';
-import 'blacklist_screen.dart';
-import 'dislikes_screen.dart';
-import 'diagnostics_screen.dart';
-import 'storage_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -40,8 +37,7 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text('Тема, акцент, плеер, формы, шрифт',
               style: TextStyle(color: AppColors.white45, fontSize: 11)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AppearanceScreen())),
+          onTap: () => context.push(Routes.appearance),
         ),
         const SizedBox(height: 16),
         const _Header('Источники'),
@@ -57,15 +53,36 @@ class SettingsScreen extends ConsumerWidget {
           ),
         const SizedBox(height: 16),
         const _Header('Яндекс Музыка'),
-        _YandexToken(settings.hasYandexToken),
+        _TokenField(
+          hasToken: settings.hasYandexToken,
+          hint: 'OAuth-токен Яндекс Музыки',
+          onSave: (v) => ref.read(settingsProvider).setYandexToken(v),
+          onDelete: () => ref.read(settingsProvider).setYandexToken(null),
+        ),
         const SizedBox(height: 16),
         const _Header('SoundCloud'),
-        _SoundcloudToken(settings.hasSoundcloudToken),
+        _TokenField(
+          hasToken: settings.hasSoundcloudToken,
+          hint: 'OAuth-токен SoundCloud (2-xxxxxx-...)',
+          description: 'OAuth-токен твоего аккаунта SoundCloud — открывает '
+              'полные треки Go+, покрытые твоей подпиской.',
+          onSave: (v) => ref.read(settingsProvider).setSoundcloudToken(v),
+          onDelete: () => ref.read(settingsProvider).setSoundcloudToken(null),
+        ),
         const SizedBox(height: 10),
         const _SoundcloudClientId(),
         const SizedBox(height: 16),
         const _Header('VK Музыка'),
-        _VkToken(settings.hasVkToken),
+        _TokenField(
+          hasToken: settings.hasVkToken,
+          hint: 'Access-токен VK',
+          description: 'Токен клиента VK с доступом к аудио (напр. Kate '
+              'Mobile). Даёт большой каталог, доступный из РФ, когда '
+              'SoundCloud/YouTube заблокированы. Аккаунт — на свой риск '
+              '(нарушает правила VK).',
+          onSave: (v) => ref.read(settingsProvider).setVkToken(v),
+          onDelete: () => ref.read(settingsProvider).setVkToken(null),
+        ),
         const SizedBox(height: 16),
         const _Header('Сеть'),
         SwitchListTile(
@@ -212,8 +229,7 @@ class SettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.bar_chart),
           title: const Text('Статистика прослушиваний'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const StatsScreen())),
+          onTap: () => context.push(Routes.stats),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -222,8 +238,7 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text('Загрузки, кэш, очистка',
               style: TextStyle(color: AppColors.white45, fontSize: 11)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const StorageScreen())),
+          onTap: () => context.push(Routes.storage),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -232,8 +247,7 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text('Скрытые из ленты и радио',
               style: TextStyle(color: AppColors.white45, fontSize: 11)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BlacklistScreen())),
+          onTap: () => context.push(Routes.blacklist),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -242,8 +256,7 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text('Треки, исключённые из рекомендаций',
               style: TextStyle(color: AppColors.white45, fontSize: 11)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DislikesScreen())),
+          onTap: () => context.push(Routes.dislikes),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -252,8 +265,7 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text('Журнал событий источников (если что-то не играет)',
               style: TextStyle(color: AppColors.white45, fontSize: 11)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DiagnosticsScreen())),
+          onTap: () => context.push(Routes.diagnostics),
         ),
         _AutoDlLikesTile(),
         const SizedBox(height: 16),
@@ -327,15 +339,15 @@ class _RiskBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFE24B4A).withValues(alpha: 0.10),
+        color: AppColors.danger.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE24B4A).withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(Icons.warning_amber_rounded,
-              color: Color(0xFFE24B4A), size: 20),
+              color: AppColors.danger, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -352,14 +364,30 @@ class _RiskBanner extends StatelessWidget {
   }
 }
 
-class _YandexToken extends ConsumerStatefulWidget {
-  const _YandexToken(this.hasToken);
+/// Параметризованное поле ввода токена источника. Заменяет три идентичных
+/// виджета (_YandexToken/_SoundcloudToken/_VkToken): одинаковая структура
+/// (описание опционально → поле ввода → кнопка «Сохранить», либо строка
+/// «Токен сохранён» → «Удалить»), различаются только текст и колбэки.
+class _TokenField extends ConsumerStatefulWidget {
+  const _TokenField({
+    required this.hasToken,
+    required this.hint,
+    required this.onSave,
+    required this.onDelete,
+    this.description,
+  });
+
   final bool hasToken;
+  final String hint;
+  final String? description;
+  final ValueChanged<String> onSave;
+  final VoidCallback onDelete;
+
   @override
-  ConsumerState<_YandexToken> createState() => _YandexTokenState();
+  ConsumerState<_TokenField> createState() => _TokenFieldState();
 }
 
-class _YandexTokenState extends ConsumerState<_YandexToken> {
+class _TokenFieldState extends ConsumerState<_TokenField> {
   final _c = TextEditingController();
 
   @override
@@ -373,87 +401,22 @@ class _YandexTokenState extends ConsumerState<_YandexToken> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.hasToken)
-          Row(
-            children: [
-              const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
-              const SizedBox(width: 8),
-              const Text('Токен сохранён'),
-              const Spacer(),
-              TextButton(
-                onPressed: () =>
-                    ref.read(settingsProvider).setYandexToken(null),
-                child: const Text('Удалить'),
-              ),
-            ],
-          )
-        else ...[
-          TextField(
-            controller: _c,
-            obscureText: true,
-            decoration: InputDecoration(
-              hintText: 'OAuth-токен Яндекс Музыки',
-              filled: true,
-              fillColor: AppColors.surface2,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
+        if (widget.description != null) ...[
+          Text(
+            widget.description!,
+            style: TextStyle(fontSize: 11.5, color: AppColors.white45),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: () => ref
-                  .read(settingsProvider)
-                  .setYandexToken(_c.text.trim()),
-              child: const Text('Сохранить токен'),
-            ),
-          ),
         ],
-      ],
-    );
-  }
-}
-
-class _SoundcloudToken extends ConsumerStatefulWidget {
-  const _SoundcloudToken(this.hasToken);
-  final bool hasToken;
-  @override
-  ConsumerState<_SoundcloudToken> createState() => _SoundcloudTokenState();
-}
-
-class _SoundcloudTokenState extends ConsumerState<_SoundcloudToken> {
-  final _c = TextEditingController();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'OAuth-токен твоего аккаунта SoundCloud — открывает полные треки Go+, '
-          'покрытые твоей подпиской.',
-          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
-        ),
-        const SizedBox(height: 8),
         if (widget.hasToken)
           Row(
             children: [
-              const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
+              const Icon(Icons.check_circle, color: AppColors.success, size: 18),
               const SizedBox(width: 8),
               const Text('Токен сохранён'),
               const Spacer(),
               TextButton(
-                onPressed: () =>
-                    ref.read(settingsProvider).setSoundcloudToken(null),
+                onPressed: widget.onDelete,
                 child: const Text('Удалить'),
               ),
             ],
@@ -463,7 +426,7 @@ class _SoundcloudTokenState extends ConsumerState<_SoundcloudToken> {
             controller: _c,
             obscureText: true,
             decoration: InputDecoration(
-              hintText: 'OAuth-токен SoundCloud (2-xxxxxx-...)',
+              hintText: widget.hint,
               filled: true,
               fillColor: AppColors.surface2,
               border: OutlineInputBorder(
@@ -476,79 +439,7 @@ class _SoundcloudTokenState extends ConsumerState<_SoundcloudToken> {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton(
-              onPressed: () => ref
-                  .read(settingsProvider)
-                  .setSoundcloudToken(_c.text.trim()),
-              child: const Text('Сохранить токен'),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _VkToken extends ConsumerStatefulWidget {
-  const _VkToken(this.hasToken);
-  final bool hasToken;
-  @override
-  ConsumerState<_VkToken> createState() => _VkTokenState();
-}
-
-class _VkTokenState extends ConsumerState<_VkToken> {
-  final _c = TextEditingController();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Токен клиента VK с доступом к аудио (напр. Kate Mobile). Даёт большой '
-          'каталог, доступный из РФ, когда SoundCloud/YouTube заблокированы. '
-          'Аккаунт — на свой риск (нарушает правила VK).',
-          style: TextStyle(fontSize: 11.5, color: AppColors.white45),
-        ),
-        const SizedBox(height: 8),
-        if (widget.hasToken)
-          Row(
-            children: [
-              const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
-              const SizedBox(width: 8),
-              const Text('Токен сохранён'),
-              const Spacer(),
-              TextButton(
-                onPressed: () => ref.read(settingsProvider).setVkToken(null),
-                child: const Text('Удалить'),
-              ),
-            ],
-          )
-        else ...[
-          TextField(
-            controller: _c,
-            obscureText: true,
-            decoration: InputDecoration(
-              hintText: 'Access-токен VK',
-              filled: true,
-              fillColor: AppColors.surface2,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: () =>
-                  ref.read(settingsProvider).setVkToken(_c.text.trim()),
+              onPressed: () => widget.onSave(_c.text.trim()),
               child: const Text('Сохранить токен'),
             ),
           ),
@@ -607,7 +498,7 @@ class _HttpProxyState extends ConsumerState<_HttpProxy> {
         Row(
           children: [
             Icon(active ? Icons.check_circle : Icons.public_off,
-                color: active ? const Color(0xFF43E08A) : AppColors.white45,
+                color: active ? AppColors.success : AppColors.white45,
                 size: 18),
             const SizedBox(width: 8),
             Text(active ? 'Прокси задан' : 'Прямое соединение'),
@@ -750,7 +641,7 @@ class _LastfmState extends ConsumerState<_Lastfm> {
     if (svc.enabled) {
       return Row(
         children: [
-          const Icon(Icons.check_circle, color: Color(0xFF43E08A), size: 18),
+          const Icon(Icons.check_circle, color: AppColors.success, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text('Вошли как ${svc.username}')),
           TextButton(
@@ -795,7 +686,7 @@ class _LastfmState extends ConsumerState<_Lastfm> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(_msg!,
-                style: const TextStyle(color: Color(0xFFE24B4A), fontSize: 12)),
+                style: const TextStyle(color: AppColors.danger, fontSize: 12)),
           ),
         const SizedBox(height: 8),
         Align(
