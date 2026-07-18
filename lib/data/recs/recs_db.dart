@@ -7,7 +7,7 @@ class RecsDb {
   RecsDb._(this.db);
   final Database db;
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
 
   static Future<RecsDb> open() async {
     try {
@@ -79,8 +79,43 @@ class RecsDb {
         payload TEXT NOT NULL,
         updated_ts INTEGER NOT NULL
       )''');
+
+    await _createMaintenance(db);
   }
 
-  // Будущие версии схемы: switch по [from]. v1 — начальная, миграций пока нет.
-  static Future<void> _upgrade(Database db, int from, int to) async {}
+  static Future<void> _createMaintenance(Database db) => db.execute('''
+      CREATE TABLE maintenance(
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL
+      )''');
+
+  // Будущие версии схемы: switch по [from].
+  static Future<void> _upgrade(Database db, int from, int to) async {
+    if (from < 2) await _createMaintenance(db);
+  }
+
+  /// Удаляет события старше [retention] (по умолчанию 90 дней) — event log
+  /// иначе растёт неограниченно. Возвращает число удалённых строк.
+  Future<int> pruneEventsOlderThan(Duration retention) {
+    final cutoff =
+        DateTime.now().subtract(retention).millisecondsSinceEpoch ~/ 1000;
+    return db.delete('events', where: 'ts < ?', whereArgs: [cutoff]);
+  }
+
+  /// Освобождает место, занятое удалёнными строками (перестраивает файл БД).
+  /// Дорогая операция — вызывающий сам решает, как часто её гонять
+  /// (см. [RecsStore.runMaintenance]).
+  Future<void> vacuum() => db.execute('VACUUM');
+
+  Future<int?> getMaintenanceValue(String key) async {
+    final rows =
+        await db.query('maintenance', where: 'key = ?', whereArgs: [key]);
+    return rows.isEmpty ? null : rows.first['value'] as int?;
+  }
+
+  Future<void> setMaintenanceValue(String key, int value) => db.insert(
+        'maintenance',
+        {'key': key, 'value': value},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 }

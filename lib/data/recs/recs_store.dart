@@ -47,6 +47,26 @@ class RecsStore extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {/* БД недоступна — работаем без дизлайков */}
+    unawaited(runMaintenance());
+  }
+
+  static const _retention = Duration(days: 90);
+  static const _vacuumEvery = Duration(days: 7);
+  static const _kLastVacuumTs = 'last_vacuum_ts';
+
+  /// Чистит event log от старья и раз в [_vacuumEvery] дней перестраивает файл
+  /// БД, чтобы место от удалённых строк не копилось вечно. Не блокирует старт
+  /// (вызывается fire-and-forget из init()) и не бросает наружу — сбой уборки
+  /// не должен ронять рекомендации.
+  Future<void> runMaintenance() async {
+    try {
+      await _db.pruneEventsOlderThan(_retention);
+      final last = await _db.getMaintenanceValue(_kLastVacuumTs) ?? 0;
+      if (_nowSec - last >= _vacuumEvery.inSeconds) {
+        await _db.vacuum();
+        await _db.setMaintenanceValue(_kLastVacuumTs, _nowSec);
+      }
+    } catch (_) {/* уборка необязательна — не мешаем работе recs */}
   }
 
   bool isDisliked(Track t) => _dislikedKeys.contains(keyFor(t));
