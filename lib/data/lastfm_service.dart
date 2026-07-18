@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/models/track.dart';
@@ -9,22 +10,73 @@ import '../domain/models/track.dart';
 /// Скробблинг в Last.fm. Пользователь создаёт API-аккаунт (key+secret) и входит
 /// логином/паролем (auth.getMobileSession) — пароль не сохраняется, хранится
 /// только session key.
+///
+/// Все секреты (apiKey, secret, sessionKey) лежат в flutter_secure_storage
+/// (раньше — в SharedPreferences plaintext, что позволяло утечь через бэкап).
+/// Загрузка из secure storage асинхронна, поэтому после конструктора нужно
+/// вызвать [init] (это делает main.dart перед runApp). До init сервис считает
+/// себя без creds — безопасно, ничего не скробблит.
 class LastfmService {
-  LastfmService(this._dio, this._prefs) {
-    _apiKey = _prefs.getString('lastfm_key');
-    _secret = _prefs.getString('lastfm_secret');
-    _sessionKey = _prefs.getString('lastfm_sk');
-    _username = _prefs.getString('lastfm_user');
+  LastfmService(this._dio, this._storage) {
+    // Одноразовая миграция старых plaintext-ключей из prefs в secure storage.
+    // Бесполезна после первого успешного запуска, но безболезненна: если
+    // в prefs ничего нет, просто нет-op.
+    _migrateFromPrefs();
   }
 
   final Dio _dio;
-  final SharedPreferences _prefs;
+  final FlutterSecureStorage _storage;
   static const _base = 'https://ws.audioscrobbler.com/2.0/';
+
+  // Ключи в secure storage (Keystore/Keychain на устройстве).
+  static const _kApiKey = 'lastfm_key';
+  static const _kSecret = 'lastfm_secret';
+  static const _kSessionKey = 'lastfm_sk';
+  static const _kUsername = 'lastfm_user';
+  // Флаг того, что миграция из prefs уже выполнена (чтобы не дёргать prefs
+  // на каждом старке после перехода).
+  static const _kMigrated = 'lastfm_migrated';
 
   String? _apiKey;
   String? _secret;
   String? _sessionKey;
   String? _username;
+  bool _loaded = false;
+
+  /// Загружает секреты из secure storage. Вызывается из main() перед runApp.
+  /// Идемпотентен. После вызова сервис готов к скробблингу (если creds есть).
+  Future<void> init() async {
+    if (_loaded) return;
+    _apiKey = await _storage.read(key: _kApiKey);
+    _secret = await _storage.read(key: _kSecret);
+    _sessionKey = await _storage.read(key: _kSessionKey);
+    _username = await _storage.read(key: _kUsername);
+    _loaded = true;
+  }
+
+  /// Миграция старых plaintext-значений из SharedPreferences в secure storage.
+  /// Запускается один раз (флаг lastfm_migrated), затем ключи из prefs
+  /// удаляются. Если prefs пусты или миграция уже была — нет-op.
+  Future<void> _migrateFromPrefs() async {
+    // Нельзя использовать secure_storage для флага _kMigrated (он сам по себе
+    // признак, что secure storage уже задействован) — держим флаг в prefs.
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_kMigrated) ?? false) return;
+    final k = prefs.getString('lastfm_key');
+    final s = prefs.getString('lastfm_secret');
+    final sk = prefs.getString('lastfm_sk');
+    final u = prefs.getString('lastfm_user');
+    if (k != null) await _storage.write(key: _kApiKey, value: k);
+    if (s != null) await _storage.write(key: _kSecret, value: s);
+    if (sk != null) await _storage.write(key: _kSessionKey, value: sk);
+    if (u != null) await _storage.write(key: _kUsername, value: u);
+    // Чистим plaintext из prefs — теперь они в secure storage.
+    await prefs.remove('lastfm_key');
+    await prefs.remove('lastfm_secret');
+    await prefs.remove('lastfm_sk');
+    await prefs.remove('lastfm_user');
+    await prefs.setBool(_kMigrated, true);
+  }
 
   bool get enabled => _sessionKey != null && _apiKey != null;
   bool get hasCredentials =>
@@ -34,8 +86,9 @@ class LastfmService {
   Future<void> saveCredentials(String apiKey, String secret) async {
     _apiKey = apiKey.trim();
     _secret = secret.trim();
-    await _prefs.setString('lastfm_key', _apiKey!);
-    await _prefs.setString('lastfm_secret', _secret!);
+    await _storage.write(key: _kApiKey, value: _apiKey!);
+    await _storage.write(key: _kSecret, value: _secret!);
+    _loaded = true;
   }
 
   String _sign(Map<String, String> params) {
@@ -69,8 +122,8 @@ class LastfmService {
       if (sk == null) return false;
       _sessionKey = sk;
       _username = name ?? user.trim();
-      await _prefs.setString('lastfm_sk', sk);
-      await _prefs.setString('lastfm_user', _username!);
+      await _storage.write(key: _kSessionKey, value: sk);
+      await _storage.write(key: _kUsername, value: _username!);
       return true;
     } catch (_) {
       return false;
@@ -80,8 +133,8 @@ class LastfmService {
   Future<void> logout() async {
     _sessionKey = null;
     _username = null;
-    await _prefs.remove('lastfm_sk');
-    await _prefs.remove('lastfm_user');
+    await _storage.delete(key: _kSessionKey);
+    await _storage.delete(key: _kUsername);
   }
 
   Future<void> updateNowPlaying(Track t) =>

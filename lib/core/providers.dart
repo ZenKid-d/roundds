@@ -162,7 +162,7 @@ final audioHandlerProvider = Provider<RoundsAudioHandler>(
     (ref) => throw UnimplementedError('audioHandler override missing'));
 
 final lastfmServiceProvider = Provider<LastfmService>(
-    (ref) => LastfmService(ref.read(dioProvider), ref.read(prefsProvider)));
+    (ref) => LastfmService(ref.read(dioProvider), ref.read(secureStorageProvider)));
 
 final spotifyImportProvider = Provider<SpotifyImportService>(
     (ref) => SpotifyImportService(ref.read(dioProvider)));

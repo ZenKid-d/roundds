@@ -49,3 +49,18 @@ key.properties
 android/key.properties
 *.jks
 *.keystore
+
+# Obfuscation symbols (генерируются при --split-debug-info в релизе).
+# Нужны для декодирования стек-трейсов крашей; хранятся локально/в CI
+# как артефакт, в репозиторий не идут — могут утечь имена Dart-символов.
+build/symbols/
+*.symbols
+
+# Release APK + sha256 (генерируются в релизном workflow локально/в CI)
+roundds-*.apk
+roundds-*.apk.sha256
+
+# Служебные директории редактора/окружения — не относятся к проекту
+.omo/
+.zcode/
+

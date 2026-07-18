@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
@@ -14,6 +15,7 @@ import 'core/net/doh_resolver.dart';
 import 'core/providers.dart';
 import 'core/update_service.dart';
 import 'data/aggregator.dart';
+import 'data/lastfm_service.dart';
 import 'data/recommendation_service.dart';
 import 'data/recs/recs_db.dart';
 import 'data/recs/recs_store.dart';
@@ -60,6 +62,13 @@ Future<void> main() async {
 
   final downloads = DownloadsController(prefs, dio, aggregator);
   final reco = RecommendationService(youtube, soundcloud, yandex, aggregator);
+
+  // Last.fm: секреты (apiKey/secret/sessionKey) лежат в secure storage.
+  // Загружаем асинхронно перед runApp, чтобы синхронные геттеры сервиса
+  // (enabled/hasApiKey) сразу видели creds. Миграция из prefs идёт в
+  // конструкторе (см. LastfmService._migrateFromPrefs).
+  final lastfm = LastfmService(dio, const FlutterSecureStorage());
+  await lastfm.init();
 
   // Recs v2: event log / дизлайки (SQLite). Открываем БД, загружаем дизлайки,
   // один раз импортируем существующие сигналы (лайки/статы) из prefs.
@@ -141,6 +150,7 @@ Future<void> main() async {
         downloadsProvider.overrideWith((ref) => downloads),
         recommendationServiceProvider.overrideWithValue(reco),
         recsStoreProvider.overrideWith((ref) => recsStore),
+        lastfmServiceProvider.overrideWithValue(lastfm),
       ],
       child: const RoundedsApp(),
     ),
