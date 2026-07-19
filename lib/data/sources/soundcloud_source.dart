@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -225,18 +226,57 @@ class SoundcloudSource implements MusicSource {
     final media = j['media'] as Map?;
     final transcodings =
         (media?['transcodings'] as List?)?.cast<Map>() ?? const [];
+    final user = j['user'] as Map?;
     String? art = j['artwork_url'] as String?;
     art = art?.replaceAll('-large', '-t500x500');
     return Track(
       id: '${j['id']}',
       title: j['title'] as String? ?? 'Без названия',
-      artist: (j['user'] as Map?)?['username'] as String? ?? 'SoundCloud',
+      artist: user?['username'] as String? ?? 'SoundCloud',
       artworkUrl: art,
       duration: j['duration'] != null
           ? Duration(milliseconds: j['duration'] as int)
           : null,
       source: SourceType.soundcloud,
-      extra: {'transcodings': transcodings},
+      extra: {
+        'transcodings': transcodings,
+        // id автора трека — нужен для запроса полного профиля (страница
+        // исполнителя: аватар/баннер/подписчики), см. artistProfile().
+        if (user?['id'] != null) 'scUserId': user!['id'],
+      },
     );
+  }
+
+  /// Профиль автора трека [seed] (аватар/баннер/био/подписчики) —
+  /// для страницы исполнителя. null, если у трека нет id автора (сток-данные
+  /// без user), либо запрос не удался.
+  Future<ArtistProfile?> artistProfile(Track seed) async {
+    final userId = seed.extra['scUserId'];
+    if (userId == null) return null;
+    await _ensureClientId();
+    try {
+      final r = await _dio.get('$_apiBase/users/$userId',
+          queryParameters: {'client_id': _clientId},
+          options: Options(headers: _authHeaders));
+      final j = (r.data as Map).cast<String, dynamic>();
+      final visuals = (j['visuals'] as Map?)?['visuals'] as List?;
+      String? banner;
+      if (visuals != null && visuals.isNotEmpty) {
+        banner = (visuals.first as Map?)?['visual_url'] as String?;
+      }
+      final bio = (j['description'] as String?)?.trim();
+      return ArtistProfile(
+        name: j['username'] as String? ?? seed.artist,
+        source: SourceType.soundcloud,
+        avatarUrl:
+            (j['avatar_url'] as String?)?.replaceAll('-large', '-t500x500'),
+        bannerUrl: banner,
+        bio: (bio == null || bio.isEmpty) ? null : bio,
+        followers: (j['followers_count'] as num?)?.toInt(),
+      );
+    } catch (e) {
+      Diagnostics.instance.warn('sc.artistProfile', '$userId: $e');
+      return null;
+    }
   }
 }

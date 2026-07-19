@@ -98,5 +98,35 @@
   "artistTracksEmpty": "Ничего не найдено",
   "@artistTracksEmpty": {
     "description": "Пустое состояние: у артиста не нашлось треков"
+  },
+  "artistTracksTab": "Треки",
+  "@artistTracksTab": {
+    "description": "Вкладка со списком треков на странице артиста"
+  },
+  "artistAlbumsTab": "Альбомы",
+  "@artistAlbumsTab": {
+    "description": "Вкладка с альбомами на странице артиста"
+  },
+  "artistPlayAll": "Слушать всё",
+  "@artistPlayAll": {
+    "description": "Кнопка запуска воспроизведения всех найденных треков артиста подряд"
+  },
+  "artistTracksCount": "{count, plural, one{{count} трек} few{{count} трека} many{{count} треков} other{{count} трека}}",
+  "@artistTracksCount": {
+    "description": "Счётчик найденных треков на странице артиста",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "artistFollowersCount": "{count, plural, one{{count} подписчик} few{{count} подписчика} many{{count} подписчиков} other{{count} подписчика}}",
+  "@artistFollowersCount": {
+    "description": "Счётчик подписчиков артиста (только для источников, отдающих профиль — сейчас SoundCloud)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

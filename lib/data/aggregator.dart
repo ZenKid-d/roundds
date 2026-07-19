@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 
 import '../core/diagnostics.dart';
 import '../core/net/net_errors.dart';
+import '../domain/models/artist_profile.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import '../domain/music_source.dart';
 import 'recs/recs_dedup.dart';
+import 'sources/soundcloud_source.dart';
 import 'sources/yandex_source.dart';
 import 'sources/youtube_music_source.dart';
 
@@ -153,6 +155,22 @@ class Aggregator {
     }
     final q = '${track.artist} ${track.album ?? ''}'.trim();
     return q.isEmpty ? const [] : search(q);
+  }
+
+  /// Профиль исполнителя (аватар/баннер/подписчики) для страницы артиста —
+  /// нативно умеет только SoundCloud. Для остальных источников артист в API
+  /// это просто строка имени, отдельного профиля отдать неоткуда — null.
+  Future<ArtistProfile?> artistProfile(Track seed) async {
+    final src = _sources[seed.source];
+    if (src is! SoundcloudSource || !_enabled.contains(SourceType.soundcloud)) {
+      return null;
+    }
+    try {
+      return await src.artistProfile(seed);
+    } catch (e) {
+      Diagnostics.instance.warn('aggregator', 'artistProfile упал: $e');
+      return null;
+    }
   }
 
   Future<PlayableStream> resolveStream(Track track) =>

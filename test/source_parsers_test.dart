@@ -428,6 +428,17 @@ void main() {
       expect(t.title, 'Без названия');
       expect(t.artist, 'SoundCloud');
     });
+
+    test('id автора кладётся в extra.scUserId (для страницы артиста)', () {
+      final r = raw()..['user'] = {'username': 'DJ Test', 'id': 777};
+      final t = SoundcloudSource.toTrack(r)!;
+      expect(t.extra['scUserId'], 777);
+    });
+
+    test('без id автора — scUserId отсутствует в extra', () {
+      final t = SoundcloudSource.toTrack(raw())!;
+      expect(t.extra.containsKey('scUserId'), isFalse);
+    });
   });
 
   group('DohResolver.parseAnswers (DoH JSON)', () {

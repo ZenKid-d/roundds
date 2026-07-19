@@ -20,5 +20,10 @@
   "artistUnfollowSnack": "Unfollowed «{artist}»",
   "artistFollowSnack": "Now following «{artist}»",
   "artistRadioTooltip": "Radio from this artist",
-  "artistTracksEmpty": "Nothing found"
+  "artistTracksEmpty": "Nothing found",
+  "artistTracksTab": "Tracks",
+  "artistAlbumsTab": "Albums",
+  "artistPlayAll": "Play all",
+  "artistTracksCount": "{count, plural, one{{count} track} other{{count} tracks}}",
+  "artistFollowersCount": "{count, plural, one{{count} follower} other{{count} followers}}"
 }
