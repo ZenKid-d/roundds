@@ -36,6 +36,12 @@ class SettingsController extends ChangeNotifier {
   String? _soundcloudToken;
   String? _vkToken;
 
+  /// Предпочтительный источник для подмены при сбое/пейволле родного. null —
+  /// авто (по умолчанию YouTube Music первым, как самый доступный). Пользователь
+  /// может выбрать, если у его провайдера YT режется и лучше работают Яндекс/VK.
+  SourceType? _preferredFallback;
+  SourceType? get preferredFallback => _preferredFallback;
+
   Set<SourceType> get enabledSources => _enabled;
   bool isEnabled(SourceType t) => _enabled.contains(t);
   String? get yandexToken => _yandexToken;
@@ -100,6 +106,10 @@ class SettingsController extends ChangeNotifier {
     _vkToken = await _secure.read(key: 'vk_token');
     _vk.setToken(_vkToken);
     _aggregator.setEnabled(_enabled);
+    final pf = _prefs.getString('preferred_fallback');
+    _preferredFallback =
+        pf == null ? null : SourceTypeX.fromId(pf);
+    _aggregator.setPreferredFallback(_preferredFallback);
     notifyListeners();
   }
 
@@ -112,6 +122,18 @@ class SettingsController extends ChangeNotifier {
     await _prefs.setStringList(
         'enabled_sources', _enabled.map((e) => e.id).toList());
     _aggregator.setEnabled(_enabled);
+    notifyListeners();
+  }
+
+  /// Устанавливает предпочтительный источник для подмены. null — авто (YT первым).
+  Future<void> setPreferredFallback(SourceType? t) async {
+    _preferredFallback = t;
+    if (t == null) {
+      await _prefs.remove('preferred_fallback');
+    } else {
+      await _prefs.setString('preferred_fallback', t.id);
+    }
+    _aggregator.setPreferredFallback(t);
     notifyListeners();
   }
 

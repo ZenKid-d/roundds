@@ -7,6 +7,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -299,6 +300,201 @@ class YoutubeMusicSource implements MusicSource {
     );
   }
 
+  // --- Профиль исполнителя (аватар/баннер/подписчики/био) ---
+
+  /// Профиль исполнителя для страницы артиста: аватар и browseId — из
+  /// карточки «Top result» обычного (нефильтрованного) поиска, баннер/био/
+  /// подписчики — отдельным browse(browseId). Оба запроса отдельные от
+  /// search() (тот ходит с фильтром «Songs», где карточки артиста нет).
+  Future<ArtistProfile?> artistProfile(String artistName) async {
+    try {
+      final card = await _findArtistCard(artistName);
+      if (card == null) return null;
+      final header = await _browseArtistHeader(card.browseId);
+      return ArtistProfile(
+        name: header?.name ?? card.name,
+        source: SourceType.youtube,
+        avatarUrl: card.avatarUrl,
+        bannerUrl: header?.bannerUrl,
+        bio: header?.bio,
+        followers: header?.subscribers,
+      );
+    } catch (e) {
+      Diagnostics.instance.warn('yt.artistProfile', '$artistName: $e');
+      return null;
+    }
+  }
+
+  /// Ищет карточку исполнителя («Top result», subtitle начинается с «Artist»)
+  /// в общей выдаче поиска — она не участвует в списке треков (тот берёт
+  /// «Songs»-фильтр), поэтому отдельный запрос без фильтра.
+  Future<({String browseId, String? avatarUrl, String name})?> _findArtistCard(
+      String query) async {
+    await _ensureMusicKeys();
+    if (_musicKey == null) return null;
+    final resp = await _dio.post(
+      'https://music.youtube.com/youtubei/v1/search',
+      queryParameters: {'key': _musicKey},
+      data: {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': _musicVer,
+            'hl': 'en',
+            'gl': 'US',
+          }
+        },
+        'query': query,
+      },
+      options: Options(headers: {
+        'User-Agent': _ua,
+        'Content-Type': 'application/json',
+        'Origin': 'https://music.youtube.com',
+        'Referer': 'https://music.youtube.com/',
+      }),
+    );
+    ({String browseId, String? avatarUrl, String name})? found;
+    void walk(dynamic n) {
+      if (found != null) return;
+      if (n is Map) {
+        final card = n['musicCardShelfRenderer'];
+        if (card is Map) {
+          found = artistCardOf(card);
+          if (found != null) return;
+        }
+        for (final v in n.values) {
+          walk(v);
+          if (found != null) return;
+        }
+      } else if (n is List) {
+        for (final v in n) {
+          walk(v);
+          if (found != null) return;
+        }
+      }
+    }
+
+    walk(resp.data);
+    return found;
+  }
+
+  /// Разбирает musicCardShelfRenderer в (browseId, аватар, имя), если это
+  /// карточка исполнителя (subtitle начинается с «Artist») — иначе null
+  /// (обычная карточка трека уходит через [cardShelfToTrack]).
+  @visibleForTesting
+  static ({String browseId, String? avatarUrl, String name})? artistCardOf(
+      Map card) {
+    final subruns = dig(card, ['subtitle', 'runs']);
+    final firstSub = (subruns is List && subruns.isNotEmpty)
+        ? (dig(subruns[0], ['text']) ?? '').toString()
+        : '';
+    if (firstSub.toLowerCase() != 'artist') return null;
+    final titleRun = dig(card, ['title', 'runs', 0]);
+    final browseId =
+        dig(titleRun, ['navigationEndpoint', 'browseEndpoint', 'browseId'])
+            as String?;
+    final name = dig(titleRun, ['text']) as String?;
+    if (browseId == null || name == null) return null;
+    String? avatar;
+    final thumbs = dig(card,
+        ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
+    if (thumbs is List && thumbs.isNotEmpty) {
+      avatar = dig(thumbs.last, ['url'])?.toString();
+    }
+    return (browseId: browseId, avatarUrl: avatar, name: name);
+  }
+
+  /// Шапка страницы исполнителя (`browse` по browseId канала): баннер, био
+  /// (склеенные runs описания — часто выдержка из Wikipedia) и число
+  /// подписчиков (сжатый текст вида «2.13M», парсится в приблизительное int).
+  Future<({String? name, String? bannerUrl, String? bio, int? subscribers})?>
+      _browseArtistHeader(String browseId) async {
+    await _ensureMusicKeys();
+    if (_musicKey == null) return null;
+    final resp = await _dio.post(
+      'https://music.youtube.com/youtubei/v1/browse',
+      queryParameters: {'key': _musicKey},
+      data: {
+        'context': {
+          'client': {
+            'clientName': 'WEB_REMIX',
+            'clientVersion': _musicVer,
+            'hl': 'en',
+            'gl': 'US',
+          }
+        },
+        'browseId': browseId,
+      },
+      options: Options(headers: {
+        'User-Agent': _ua,
+        'Content-Type': 'application/json',
+        'Origin': 'https://music.youtube.com',
+        'Referer': 'https://music.youtube.com/',
+      }),
+    );
+    return artistHeaderOf(resp.data);
+  }
+
+  /// Разбирает ответ browse(browseId артиста) в (имя, баннер, био, подписчики).
+  /// null, если в ответе нет musicImmersiveHeaderRenderer (не artist-страница
+  /// или структура ответа изменилась).
+  @visibleForTesting
+  static ({String? name, String? bannerUrl, String? bio, int? subscribers})?
+      artistHeaderOf(dynamic data) {
+    final header = dig(data, ['header', 'musicImmersiveHeaderRenderer']);
+    if (header == null) return null;
+    final name = dig(header, ['title', 'runs', 0, 'text']) as String?;
+    String? banner;
+    final thumbs = dig(header,
+        ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
+    if (thumbs is List && thumbs.isNotEmpty) {
+      banner = dig(thumbs.last, ['url'])?.toString();
+    }
+    final descRuns = dig(header, ['description', 'runs']);
+    String? bio;
+    if (descRuns is List && descRuns.isNotEmpty) {
+      bio = descRuns
+          .map((r) => (dig(r, ['text']) ?? '').toString())
+          .join()
+          .trim();
+    }
+    final subsText = dig(header, [
+      'subscriptionButton',
+      'subscribeButtonRenderer',
+      'subscriberCountText',
+      'runs',
+      0,
+      'text'
+    ]) as String?;
+    return (
+      name: name,
+      bannerUrl: banner,
+      bio: (bio == null || bio.isEmpty) ? null : bio,
+      subscribers: parseCompactCount(subsText),
+    );
+  }
+
+  /// Разбирает сжатую запись числа вида «2.13M»/«815K»/«12,345» в int.
+  /// null, если строка не начинается с числа.
+  @visibleForTesting
+  static int? parseCompactCount(String? s) {
+    if (s == null) return null;
+    final m = RegExp(r'^([\d.,]+)\s*([KMB]?)', caseSensitive: false)
+        .firstMatch(s.trim());
+    if (m == null) return null;
+    final numStr = m.group(1)!.replaceAll(',', '');
+    final n = double.tryParse(numStr);
+    if (n == null) return null;
+    final suffix = (m.group(2) ?? '').toUpperCase();
+    final mult = switch (suffix) {
+      'K' => 1e3,
+      'M' => 1e6,
+      'B' => 1e9,
+      _ => 1.0,
+    };
+    return (n * mult).round();
+  }
+
   /// Тип строки подписи (song/video/…) под musicResponsiveListItemRenderer —
   /// та же логика, что использует [mrlirToTrack] внутри себя для отсева
   /// подкастов/профилей, но здесь нужен сам тип, а не решение «показывать/нет».
@@ -413,7 +609,11 @@ class YoutubeMusicSource implements MusicSource {
   Future<PlayableStream> resolveStream(Track track) async {
     final cached = _streamCache[track.id];
     if (cached != null && !cached.isExpired) return cached;
-    final s = await _resolveStreamUncached(track);
+    // Per-call timeout: youtube_explode перебирает несколько клиентов и может
+    // подвисать на одном. 12с ловит зависание раньше глобального receiveTimeout
+    // (20с), не отсекая валидные медленные запросы.
+    final s = await _resolveStreamUncached(track)
+        .timeout(const Duration(seconds: 12));
     _streamCache[track.id] = s;
     if (_streamCache.length > 128) {
       _streamCache.remove(_streamCache.keys.first);

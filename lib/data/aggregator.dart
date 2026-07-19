@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../core/diagnostics.dart';
 import '../core/net/net_errors.dart';
+import '../domain/constants.dart';
 import '../domain/models/artist_profile.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
@@ -9,6 +12,7 @@ import '../domain/models/track.dart';
 import '../domain/music_source.dart';
 import 'recs/recs_dedup.dart';
 import 'sources/soundcloud_source.dart';
+import 'sources/vk_source.dart';
 import 'sources/yandex_source.dart';
 import 'sources/youtube_music_source.dart';
 
@@ -36,10 +40,41 @@ class Aggregator {
   final Map<String, Future<List<Track>>> _searchInFlight = {};
   Future<List<Track>>? _feedInFlight;
 
+  // Кэш кросс-источника: когда родной источник трека за пейволлом (Go+) или
+  // заблокирован, мы нашли ТУ ЖЕ песню у другого сервиса. TTL = срок жизни
+  // подписанной ссылки (см. defaultStreamExpiry) — после протухания перерезолв.
+  // Ключ — uid исходного трека, не найденного: на него завязан evict.
+  final Map<String, ({DateTime at, PlayableStream stream, Track via})>
+      _fallbackCache = {};
+
+  // Кэш результатов поиска фолбэка по нормализованному ключу artist|title.
+  // Если в очереди несколько треков одного артиста или радио крутит похожее —
+  // повторный фолбэк не идёт в сеть за тем же поиском. TTL как у поиска (5 мин).
+  static const _fallbackSearchTtl = Duration(minutes: 5);
+  final Map<String, ({DateTime at, Map<SourceType, List<Track>> bySource})>
+      _fallbackSearchCache = {};
+
+  /// Ищет тот же трек (artist+title), уже скачанный оффлайн из другого
+  /// источника — самый быстрый и надёжный кандидат фолбэка (сеть не нужна
+  /// вообще). Ставится из DownloadsController.localMatchByNormKey в main().
+  ({Track track, String path})? Function(String artist, String title)?
+      localMatchResolver;
+
   Set<SourceType> get enabled => _enabled;
   void setEnabled(Set<SourceType> e) {
     _enabled = e;
     clearCache();
+  }
+
+  /// Предпочтительный источник для подмены (null — авто, YT первым). См.
+  /// [_fallbackOrder]. Ставится из настроек; инвалидирует кэш фолбэка, т.к.
+  /// иначе в кэше останутся подмены по старому приоритету.
+  SourceType? _preferredFallback;
+  void setPreferredFallback(SourceType? t) {
+    if (_preferredFallback == t) return;
+    _preferredFallback = t;
+    _fallbackCache.clear();
+    _fallbackSearchCache.clear();
   }
 
   /// Сбрасывает кэш ленты и поиска (смена источников, pull-to-refresh).
@@ -47,6 +82,8 @@ class Aggregator {
     _feedCache = null;
     _feedAt = null;
     _searchCache.clear();
+    _fallbackCache.clear();
+    _fallbackSearchCache.clear();
   }
 
   Iterable<MusicSource> get _active =>
@@ -157,16 +194,22 @@ class Aggregator {
     return q.isEmpty ? const [] : search(q);
   }
 
-  /// Профиль исполнителя (аватар/баннер/подписчики) для страницы артиста —
-  /// нативно умеет только SoundCloud. Для остальных источников артист в API
-  /// это просто строка имени, отдельного профиля отдать неоткуда — null.
+  /// Профиль исполнителя (аватар/баннер/подписчики/био) для страницы артиста.
+  /// Умеют SoundCloud (по id автора трека), YouTube Music (по имени —
+  /// отдельный поиск карточки исполнителя + browse её канала), Яндекс Музыка
+  /// (по id артиста трека) и VK (по owner_id — но там это владелец записи,
+  /// не обязательно артист, см. [ArtistProfile.isRecordOwner]).
   Future<ArtistProfile?> artistProfile(Track seed) async {
     final src = _sources[seed.source];
-    if (src is! SoundcloudSource || !_enabled.contains(SourceType.soundcloud)) {
-      return null;
-    }
+    if (!_enabled.contains(seed.source)) return null;
     try {
-      return await src.artistProfile(seed);
+      if (src is SoundcloudSource) return await src.artistProfile(seed);
+      if (src is YoutubeMusicSource) {
+        return await src.artistProfile(seed.artist);
+      }
+      if (src is YandexSource) return await src.artistProfile(seed);
+      if (src is VkSource) return await src.artistProfile(seed);
+      return null;
     } catch (e) {
       Diagnostics.instance.warn('aggregator', 'artistProfile упал: $e');
       return null;
@@ -181,7 +224,12 @@ class Aggregator {
   void evictStreamCache(Track track) {
     final s = _sources[track.source];
     if (s is YoutubeMusicSource) s.evictStreamCache(track.id);
+    evictFallbackCache(track.uid);
   }
+
+  /// Сбрасывает кэш кросс-источника для [uid] — при ошибке воспроизведения
+  /// подменной ссылки, чтобы перерезолв взял свежий поток, а не битый из кэша.
+  void evictFallbackCache(String uid) => _fallbackCache.remove(uid);
 
   /// Ищет ту же песню на YouTube (для фолбэка загрузки, когда родной источник
   /// отдаёт HLS или недоступен). null — YouTube выключен/не нашёл. Для
@@ -199,24 +247,44 @@ class Aggregator {
     }
   }
 
-  /// Порядок источников для подмены: YouTube первым (самый доступный/бесплатный),
+  /// Порядок источников для подмены: предпочтительный пользователем первым
+  /// (если задан), затем YouTube (самый доступный/бесплатный по умолчанию),
   /// затем остальные включённые, кроме родного [exclude].
   Iterable<SourceType> _fallbackOrder(SourceType exclude) => [
+        if (_preferredFallback != null) _preferredFallback!,
         SourceType.youtube,
-        ...SourceType.values.where((t) => t != SourceType.youtube),
+        ...SourceType.values.where((t) =>
+            t != SourceType.youtube && t != _preferredFallback),
       ].where((t) =>
           t != exclude && _enabled.contains(t) && _sources[t] != null);
 
   /// Из выдачи поиска выбирает трек, который действительно совпадает с искомым
   /// [want] (тот же артист+название), отсекая каверы/чужие треки.
   @visibleForTesting
-  static Track? pickMatch(Track want, List<Track> results) {
+  static Track? pickMatch(Track want, List<Track> results) =>
+      bestMatch(want, results)?.match;
+
+  /// Ранжирует кандидатов из [results] по [RecsDedup.matchScore] (название +
+  /// артист + длительность) и возвращает лучшего со счётом. null — если ни один
+  /// не прошёл порог. Используется кросс-источником для выбора лучшей версии
+  /// трека (полная против радио-эдита, дубль с той же длительностью и т.д.).
+  @visibleForTesting
+  static ({Track match, double score})? bestMatch(
+      Track want, List<Track> results) {
+    ({Track match, double score})? best;
     for (final t in results) {
-      if (RecsDedup.resolvesTo(want.artist, want.title, t.artist, t.title)) {
-        return t;
-      }
+      final s = RecsDedup.matchScore(
+        wantArtist: want.artist,
+        wantTitle: want.title,
+        gotArtist: t.artist,
+        gotTitle: t.title,
+        wantDuration: want.duration,
+        gotDuration: t.duration,
+      );
+      if (s == null) continue;
+      if (best == null || s > best.score) best = (match: t, score: s);
     }
-    return null;
+    return best;
   }
 
   Track? _pickMatch(Track want, List<Track> results) => pickMatch(want, results);
@@ -248,23 +316,152 @@ class Aggregator {
   /// подмена при СБОЕ ВОСПРОИЗВЕДЕНИЯ (родной зарезолвился, но медиа не играет —
   /// напр. YouTube googlevideo режется провайдером, а SoundCloud играет).
   /// null — если ни один другой источник не дал играбельный поток.
+  ///
+  /// Идёт ПАРАЛЛЕЛЬНО по всем фолбэк-источникам (один медленный не блокирует
+  /// остальных), выбирает лучшего кандидата по [RecsDedup.matchScore] (название +
+  /// артист + длительность) и резолвит его. Результат кэшируется на срок жизни
+  /// подписанной ссылки ([defaultStreamExpiry]).
   Future<({PlayableStream stream, Track track})?> resolveFromOtherSources(
       Track track, {Object? nativeErr}) async {
     final query = '${track.artist} ${track.title}'.trim();
     if (query.isEmpty) return null;
-    // Если ни один источник не резолвится из-за недоступности DNS — это не
-    // «трека нет», а блокировка/неверный DNS (часто у VPN). Пишем явно.
+
+    // Кэш: недавно находили подмену для этого трека — отдаём сразу, без сети.
+    final cached = _fallbackCache[track.uid];
+    if (cached != null &&
+        DateTime.now().difference(cached.at) < defaultStreamExpiry &&
+        !cached.stream.isExpired) {
+      return (stream: cached.stream, track: cached.via);
+    }
+
+    // Офлайн-дубль той же песни (скачан из другого источника) — самый
+    // быстрый и надёжный кандидат: сеть не нужна вообще, файл не протухает.
+    final local = localMatchResolver?.call(track.artist, track.title);
+    if (local != null) {
+      final stream = PlayableStream(uri: Uri.file(local.path));
+      Diagnostics.instance.info('agg.fallback',
+          '${track.source.id} → офлайн-дубль «${track.artist} — ${track.title}»');
+      _fallbackCache[track.uid] =
+          (at: DateTime.now(), stream: stream, via: local.track);
+      return (stream: stream, track: local.track);
+    }
+
+    final paywalled = nativeErr != null && _isGoPlusErr(nativeErr);
+    if (paywalled) {
+      // Это не сбой сети, а пейволл родного источника (Go+) — логируем тише:
+      // переход на кросс-источник штатный, не ошибка.
+      Diagnostics.instance.info('agg.paywall',
+          '${track.source.id} «${track.title}»: трек за подпиской — ищем в других источниках');
+    }
+
+    // Параллельный поиск по всем фолбэк-источникам с таймаутом 8с на каждый:
+    // один зависший/медленный сервис не задержит остальные. Результаты поиска
+    // кэшируются по normKey — несколько треков одного артиста в очереди не
+    // приведут к повторным сетевым запросам за той же выдачей.
+    final normKey = RecsDedup.normKey(track.artist, track.title);
+    final sw = Stopwatch()..start();
+    final order = _fallbackOrder(track.source).toList();
     Object? dnsErr =
         (nativeErr != null && isDnsBlockError(nativeErr)) ? nativeErr : null;
-    for (final t in _fallbackOrder(track.source)) {
+
+    // Если для этого artist|title уже искали недавно — переиспользуем выдачу,
+    // в сеть не идём (только резолв победителя ниже).
+    final cachedSearch = _fallbackSearchCache[normKey];
+    final useCache = cachedSearch != null &&
+        DateTime.now().difference(cachedSearch.at) < _fallbackSearchTtl;
+
+    final List<({SourceType source, List<Track> results, Object? err})> searches;
+    if (useCache) {
+      // Восстанавливаем поисковые записи из кэша; исключаем родной источник
+      // (он уже не отдал поток — нет смысла перебирать его кандидатов).
+      searches = order.map((t) {
+        final results = cachedSearch.bySource[t] ?? const <Track>[];
+        return (source: t, results: results, err: null);
+      }).toList();
+    } else {
+      final searchFutures = order.map((t) async {
+        try {
+          final src = _sources[t]!;
+          final r = await src.search(query, limit: 5).timeout(
+                const Duration(seconds: 8),
+                onTimeout: () => const <Track>[],
+              );
+          return (source: t, results: r, err: null);
+        } catch (e) {
+          if (isDnsBlockError(e)) {
+            return (source: t, results: const <Track>[], err: e);
+          }
+          return (source: t, results: const <Track>[], err: null);
+        }
+      });
+      searches = await Future.wait(searchFutures);
+
+      // Сохраняем свежую выдачу по normKey для следующих треков той же песни.
+      _fallbackSearchCache[normKey] = (
+        at: DateTime.now(),
+        bySource: {
+          for (final e in searches) e.source: e.results,
+        },
+      );
+      if (_fallbackSearchCache.length > 32) {
+        _fallbackSearchCache.remove(_fallbackSearchCache.keys.first);
+      }
+    }
+
+    // Собираем прошедших порог кандидатов со счётом.
+    final candidates = <({Track match, SourceType source, double score})>[];
+    for (final entry in searches) {
+      if (entry.err != null) dnsErr ??= entry.err;
+      for (final r in entry.results) {
+        final s = RecsDedup.matchScore(
+          wantArtist: track.artist,
+          wantTitle: track.title,
+          gotArtist: r.artist,
+          gotTitle: r.title,
+          wantDuration: track.duration,
+          gotDuration: r.duration,
+        );
+        if (s == null) continue;
+        candidates.add((match: r, source: entry.source, score: s));
+      }
+    }
+    if (candidates.isEmpty) {
+      if (dnsErr != null) _logDnsBlock(dnsErr);
+      return null;
+    }
+
+    // Сортировка: по счёту desc, при равенстве — по приоритету источника
+    // (_fallbackOrder: YT первым как самый доступный).
+    final orderIndex = {for (var i = 0; i < order.length; i++) order[i]: i};
+    candidates.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      if (byScore != 0) return byScore;
+      return (orderIndex[a.source] ?? 99)
+          .compareTo(orderIndex[b.source] ?? 99);
+    });
+
+    // Метрика для отладки матчинга: топ-3 кандидатов со счётом по источникам.
+    final top3 = candidates.take(3).map((c) =>
+        '${c.source.id}:${(c.score * 100).round()}%').join(', ');
+    Diagnostics.instance.info('agg.fallback.candidates',
+        '${track.source.id} «${track.artist} — ${track.title}»: '
+        '${candidates.length} кандидатов, top: $top3');
+
+    // Резолвим победителя; при неудаче — топ-3 следующих из шорт-листа, не
+    // возвращаясь к поиску (уже отдали в сеть).
+    for (final c in candidates.take(3)) {
       try {
-        final src = _sources[t]!;
-        final match = _pickMatch(track, await src.search(query, limit: 5));
-        if (match == null) continue;
-        final stream = await src.resolveStream(match);
+        final src = _sources[c.source]!;
+        final stream = await src.resolveStream(c.match);
         Diagnostics.instance.info('agg.fallback',
-            '${track.source.id} → ${t.id}: «${track.artist} — ${track.title}»');
-        return (stream: stream, track: match);
+            '${track.source.id} → ${c.source.id}: «${track.artist} — ${track.title}» '
+            '(score ${c.score.toStringAsFixed(2)}, ${sw.elapsedMilliseconds}мс)');
+        _fallbackCache[track.uid] = (
+          at: DateTime.now(),
+          stream: stream,
+          via: c.match,
+        );
+        return (stream: stream, track: c.match);
       } catch (e) {
         if (isDnsBlockError(e)) dnsErr = e;
       }
@@ -272,6 +469,23 @@ class Aggregator {
     if (dnsErr != null) _logDnsBlock(dnsErr);
     return null;
   }
+
+  /// Опознаёт маркер пейволла SoundCloud Go+ в ошибке родного источника.
+  /// См. [SoundcloudSource.goPlusMarker] — кидает SourceException со стабильным
+  /// префиксом, чтобы отличить пейволл от сетевого сбоя/блокировки.
+  @visibleForTesting
+  static bool isGoPlusErr(Object err) {
+    final msg = err is SourceException
+        ? err.message
+        : err is Exception
+            ? err.toString()
+            : '$err';
+    // Проверяем по стабильному префиксу маркера («SC_GO_PLUS»), не по полному
+    // тексту — формулировка сообщения может меняться, префикс — нет.
+    return msg.contains(SoundcloudSource.goPlusMarker.split(':').first);
+  }
+
+  static bool _isGoPlusErr(Object err) => isGoPlusErr(err);
 
   /// Пишет понятную запись `net.dns`, если ошибка — недоступность хоста (DNS).
   void _logDnsBlock(Object error) {

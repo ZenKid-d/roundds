@@ -256,6 +256,142 @@ void main() {
     });
   });
 
+  group('YoutubeMusicSource.artistCardOf (карточка исполнителя в поиске)', () {
+    // Структура — по реальному ответу music.youtube.com/youtubei/v1/search
+    // (карточка «Top result» для запроса-имени артиста).
+    Map<String, dynamic> artistCard() => {
+          'thumbnail': {
+            'musicThumbnailRenderer': {
+              'thumbnail': {
+                'thumbnails': [
+                  {'url': 'https://yt3.googleusercontent.com/avatar=w60-h60'},
+                  {'url': 'https://yt3.googleusercontent.com/avatar=w120-h120'},
+                ]
+              }
+            }
+          },
+          'title': {
+            'runs': [
+              {
+                'text': 'Oxxxymiron',
+                'navigationEndpoint': {
+                  'browseEndpoint': {'browseId': 'UCet06fFav7tnvdauZw7EwTA'}
+                }
+              }
+            ]
+          },
+          'subtitle': {
+            'runs': [
+              {'text': 'Artist'},
+              {'text': ' • '},
+              {'text': '1.48M monthly audience'},
+            ]
+          },
+        };
+
+    test('распознаёт карточку артиста: browseId/аватар/имя', () {
+      final r = YoutubeMusicSource.artistCardOf(artistCard())!;
+      expect(r.browseId, 'UCet06fFav7tnvdauZw7EwTA');
+      expect(r.name, 'Oxxxymiron');
+      expect(r.avatarUrl, contains('w120-h120'));
+    });
+
+    test('карточка трека (subtitle без «Artist») → null', () {
+      final r = artistCard();
+      (r['subtitle'] as Map)['runs'] = [
+        {'text': 'Video'},
+      ];
+      expect(YoutubeMusicSource.artistCardOf(r), isNull);
+    });
+
+    test('нет browseId в title → null', () {
+      final r = artistCard();
+      (r['title'] as Map)['runs'] = [
+        {'text': 'Oxxxymiron'}
+      ];
+      expect(YoutubeMusicSource.artistCardOf(r), isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.artistHeaderOf (шапка browse-страницы артиста)', () {
+    // Структура — по реальному ответу music.youtube.com/youtubei/v1/browse
+    // (browseId артиста): musicImmersiveHeaderRenderer.
+    Map<String, dynamic> header() => {
+          'header': {
+            'musicImmersiveHeaderRenderer': {
+              'title': {
+                'runs': [
+                  {'text': 'Oxxxymiron'}
+                ]
+              },
+              'thumbnail': {
+                'musicThumbnailRenderer': {
+                  'thumbnail': {
+                    'thumbnails': [
+                      {'url': 'https://yt3.googleusercontent.com/banner=w540'},
+                      {'url': 'https://yt3.googleusercontent.com/banner=w2880'},
+                    ]
+                  }
+                }
+              },
+              'description': {
+                'runs': [
+                  {'text': 'Miron Yanovich Fyodorov, known as Oxxxymiron. '},
+                  {'text': 'From Wikipedia ('},
+                  {'text': 'https://en.wikipedia.org/wiki/Oxxxymiron'},
+                  {'text': ')'},
+                ]
+              },
+              'subscriptionButton': {
+                'subscribeButtonRenderer': {
+                  'subscriberCountText': {
+                    'runs': [
+                      {'text': '2.13M'}
+                    ]
+                  }
+                }
+              },
+            }
+          }
+        };
+
+    test('разбирает имя/баннер/био/подписчиков', () {
+      final r = YoutubeMusicSource.artistHeaderOf(header())!;
+      expect(r.name, 'Oxxxymiron');
+      expect(r.bannerUrl, contains('w2880'));
+      expect(r.bio, contains('Fyodorov'));
+      expect(r.bio, contains('wikipedia.org'));
+      expect(r.subscribers, 2130000);
+    });
+
+    test('нет musicImmersiveHeaderRenderer → null', () {
+      expect(YoutubeMusicSource.artistHeaderOf({'header': {}}), isNull);
+    });
+
+    test('пустое описание → bio null', () {
+      final h = header();
+      (h['header']['musicImmersiveHeaderRenderer'] as Map)['description'] = {
+        'runs': <Map>[]
+      };
+      final r = YoutubeMusicSource.artistHeaderOf(h)!;
+      expect(r.bio, isNull);
+    });
+  });
+
+  group('YoutubeMusicSource.parseCompactCount', () {
+    test('разбирает суффиксы K/M/B и запятые', () {
+      expect(YoutubeMusicSource.parseCompactCount('2.13M'), 2130000);
+      expect(YoutubeMusicSource.parseCompactCount('815K'), 815000);
+      expect(YoutubeMusicSource.parseCompactCount('12,345'), 12345);
+      expect(YoutubeMusicSource.parseCompactCount('1B'), 1000000000);
+    });
+
+    test('null/мусор → null', () {
+      expect(YoutubeMusicSource.parseCompactCount(null), isNull);
+      expect(YoutubeMusicSource.parseCompactCount('subscribers'), isNull);
+    });
+  });
+
   group('YoutubeMusicSource.metaFromRuns', () {
     test('формат «Songs» (без типа): артист + длительность', () {
       final m = YoutubeMusicSource.metaFromRuns([
@@ -502,6 +638,16 @@ void main() {
       expect(t.extra['url'], '');
       expect(t.artworkUrl, isNull);
     });
+
+    test('owner_id кладётся в extra.ownerId (для профиля владельца записи)', () {
+      final t = VkSource.toTrack(raw())!;
+      expect(t.extra['ownerId'], -123);
+    });
+
+    test('без owner_id — ownerId отсутствует в extra', () {
+      final t = VkSource.toTrack({'id': 1})!;
+      expect(t.extra.containsKey('ownerId'), isFalse);
+    });
   });
 
   group('YandexSource.toTrack', () {
@@ -545,6 +691,23 @@ void main() {
     test('без альбома — extra пустой', () {
       final t = YandexSource.toTrack({'id': 1, 'title': 'x'});
       expect(t.extra['albumId'], isNull);
+    });
+
+    test('id первого артиста кладётся в extra.artistId (для страницы артиста)', () {
+      final t = YandexSource.toTrack({
+        'id': 1,
+        'title': 'x',
+        'artists': [
+          {'id': 42, 'name': 'A1'},
+          {'id': 43, 'name': 'A2'},
+        ],
+      });
+      expect(t.extra['artistId'], '42');
+    });
+
+    test('без артистов — artistId отсутствует в extra', () {
+      final t = YandexSource.toTrack({'id': 1, 'title': 'x'});
+      expect(t.extra.containsKey('artistId'), isFalse);
     });
   });
 

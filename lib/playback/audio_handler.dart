@@ -60,6 +60,10 @@ class RoundsAudioHandler extends BaseAudioHandler {
   /// Локальный путь к скачанному треку (оффлайн). Ставится из main().
   String? Function(String uid)? localFileResolver;
 
+  /// Debounce быстрых ручных пропусков: серия next резолвит только финальный
+  /// трек. См. [_advance]. Сбрасывается в [stop].
+  Timer? _skipDebounce;
+
   final List<Track> _queue = [];
   int _index = -1;
   bool _loading = false;
@@ -538,6 +542,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
   }
 
   /// Заранее резолвит ссылку следующего трека (только при выключенном shuffle).
+  /// Для SoundCloud-треков дополнительно прогревает кэш кросс-источника —
+  /// если следующий трек окажется за Go+, при переключении фолбэк сработает
+  /// мгновенно из кэша, без ожидания поиска в других источниках.
   Future<void> _preloadNext() async {
     if (_shuffle) return;
     final ni = _index + 1;
@@ -545,6 +552,12 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final next = _queue[ni];
     if (localFileResolver?.call(next.uid) != null) return;
     if (_preUid == next.uid) return;
+    // Прогрев фолбэка: не блокирует предзагрузку основного потока. Если трек
+    // окажется за пейволлом, resolveFromOtherSources уже закэширован к моменту
+    // переключения. Дублирующий вызов при реальном фолбэке берёт кэш — бесплатно.
+    if (next.source == SourceType.soundcloud) {
+      unawaited(_aggregator.resolveFromOtherSources(next).catchError((_) => null));
+    }
     try {
       final r = await _aggregator.resolveWithSource(next);
       _preUid = next.uid;
@@ -781,6 +794,24 @@ class RoundsAudioHandler extends BaseAudioHandler {
 
   Future<void> _advance({required bool auto}) async {
     if (_queue.isEmpty) return;
+    // Ручной пропуск (skip) дебаунсим: серия быстрых нажатий next резолвит
+    // только финальный трек, а не каждый промежуточный. Auto-skip (при ошибке)
+    // и автопродолжение — без дебаунса, там важна немедленная реакция.
+    if (!auto) {
+      final completer = Completer<void>();
+      _skipDebounce?.cancel();
+      _skipDebounce = Timer(const Duration(milliseconds: 120), () {
+        _doAdvance(auto: auto).whenComplete(() {
+          if (!completer.isCompleted) completer.complete();
+        });
+      });
+      return completer.future;
+    }
+    return _doAdvance(auto: auto);
+  }
+
+  Future<void> _doAdvance({required bool auto}) async {
+    if (_queue.isEmpty) return;
     if (auto && _repeat == LoopMode.one) {
       await _load();
       return;
@@ -829,6 +860,8 @@ class RoundsAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> stop() async {
+    _skipDebounce?.cancel();
+    _skipDebounce = null;
     await _player.stop();
     await super.stop();
   }

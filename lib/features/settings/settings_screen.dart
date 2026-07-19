@@ -51,6 +51,44 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(_sourceHint(s),
                 style: TextStyle(color: AppColors.white45, fontSize: 11)),
           ),
+        // Предпочтительный источник для подмены при сбое/пейволле родного.
+        // По умолчанию — Авто (YT первым). У части пользователей YT режется
+        // провайдером — тогда разумно поставить Яндекс/VK первым кандидатом.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text('Подмена при недоступности',
+                    style: TextStyle(fontSize: 14)),
+              ),
+              DropdownButton<SourceType?>(
+                value: settings.preferredFallback,
+                underline: const SizedBox(),
+                items: [
+                  const DropdownMenuItem<SourceType?>(
+                    value: null,
+                    child: Text('Авто (YT Music)'),
+                  ),
+                  for (final s in SourceType.values)
+                    DropdownMenuItem<SourceType?>(
+                      value: s,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ServiceBadge(s, size: 16),
+                          const SizedBox(width: 8),
+                          Text(s.shortLabel),
+                        ],
+                      ),
+                    ),
+                ],
+                onChanged: (v) =>
+                    ref.read(settingsProvider).setPreferredFallback(v),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         const _Header('Яндекс Музыка'),
         _TokenField(

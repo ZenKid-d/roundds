@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
+import '../data/recs/recs_dedup.dart';
 import '../domain/models/source_type.dart';
 import '../domain/models/track.dart';
 import 'notifications.dart';
@@ -29,6 +30,14 @@ class DownloadsController extends ChangeNotifier {
   final Map<String, double> _progress = {};
   final Map<String, Track> _downloading = {};
 
+  // Индекс normKey(artist, title) → uid: находит скачанный трек как офлайн-
+  // дубль ДРУГОГО источника (тот же трек уже есть локально) — фолбэк без сети.
+  // См. Aggregator.localMatchResolver / resolveFromOtherSources.
+  final Map<String, String> _byNormKey = {};
+
+  void _indexNormKey(Track t) =>
+      _byNormKey[RecsDedup.normKey(t.artist, t.title)] = t.uid;
+
   double _playlistProgress = 0;
   String? _playlistName;
   bool _playlistBusy = false;
@@ -49,6 +58,18 @@ class DownloadsController extends ChangeNotifier {
     return File(p).existsSync() ? p : null;
   }
 
+  /// Тот же трек (по artist+title), уже скачанный из ДРУГОГО источника —
+  /// офлайн-дубль для кросс-источник фолбэка (см. Aggregator.localMatchResolver).
+  /// null, если дубля нет или файл пропал с диска.
+  ({Track track, String path})? localMatchByNormKey(String artist, String title) {
+    final uid = _byNormKey[RecsDedup.normKey(artist, title)];
+    if (uid == null) return null;
+    final path = _paths[uid];
+    final track = _tracks[uid];
+    if (path == null || track == null || !File(path).existsSync()) return null;
+    return (track: track, path: path);
+  }
+
   void _load() {
     final raw = _prefs.getString('downloads');
     if (raw != null) {
@@ -57,6 +78,7 @@ class DownloadsController extends ChangeNotifier {
         final t = Track.fromJson((m['track'] as Map).cast<String, dynamic>());
         _tracks[t.uid] = t;
         _paths[t.uid] = m['path'] as String;
+        _indexNormKey(t);
       }
     }
     notifyListeners();
@@ -97,6 +119,7 @@ class DownloadsController extends ChangeNotifier {
       if (ok) {
         _tracks[track.uid] = track;
         _paths[track.uid] = path;
+        _indexNormKey(track);
         await _persist();
         if (notify) {
           await _notif.show('Трек скачан', '${track.artist} — ${track.title}');
@@ -251,6 +274,7 @@ class DownloadsController extends ChangeNotifier {
     }
     _tracks.clear();
     _paths.clear();
+    _byNormKey.clear();
     await _persist();
     notifyListeners();
   }
@@ -263,6 +287,8 @@ class DownloadsController extends ChangeNotifier {
         if (f.existsSync()) f.deleteSync();
       } catch (_) {}
     }
+    final t = _tracks[uid];
+    if (t != null) _byNormKey.remove(RecsDedup.normKey(t.artist, t.title));
     _tracks.remove(uid);
     _paths.remove(uid);
     await _persist();

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -154,8 +155,10 @@ class VkSource implements MusicSource {
     // запрос не прошёл.
     var url = '';
     try {
-      final r = await _dio.get('$_base/audio.getById',
-          queryParameters: _params({'audios': track.id}), options: _opts);
+      final r = await _dio
+          .get('$_base/audio.getById',
+              queryParameters: _params({'audios': track.id}), options: _opts)
+          .timeout(const Duration(seconds: 12));
       final items = (_unwrap(r.data)['response'] as List? ?? []);
       if (items.isNotEmpty) {
         url = (items.first as Map)['url'] as String? ?? '';
@@ -201,7 +204,87 @@ class VkSource implements MusicSource {
       artworkUrl: art,
       duration: dur is int ? Duration(seconds: dur) : null,
       source: SourceType.vk,
-      extra: {'url': j['url'] as String? ?? ''},
+      extra: {
+        'url': j['url'] as String? ?? '',
+        // Владелец записи (пользователь/паблик, кто загрузил трек) — нужен
+        // для artistProfile(). НЕ обязательно сам артист, см. isRecordOwner.
+        if (ownerId != null) 'ownerId': ownerId,
+      },
+    );
+  }
+
+  /// Профиль владельца записи (аватар/подписчики/описание) по `owner_id`
+  /// трека — положительный id значит пользователя (`users.get`), отрицательный
+  /// — паблик/группу (`groups.getById`). VK не имеет отдельной сущности
+  /// «артист» для музыки — owner_id это тот, кто ЗАГРУЗИЛ трек, поэтому
+  /// результат всегда помечен [ArtistProfile.isRecordOwner] = true; вызывающий
+  /// код обязан честно показать это как «владелец записи», а не выдавать за
+  /// подтверждённый профиль исполнителя.
+  Future<ArtistProfile?> artistProfile(Track seed) async {
+    final rawOwnerId = seed.extra['ownerId'];
+    if (rawOwnerId == null || _token == null || _token!.isEmpty) return null;
+    final ownerId =
+        rawOwnerId is int ? rawOwnerId : int.tryParse('$rawOwnerId');
+    if (ownerId == null) return null;
+    try {
+      return ownerId < 0
+          ? await _groupProfile(-ownerId, seed)
+          : await _userProfile(ownerId, seed);
+    } catch (e) {
+      Diagnostics.instance
+          .warn('vk.artistProfile', '$ownerId: ${_describe(e)}');
+      return null;
+    }
+  }
+
+  Future<ArtistProfile?> _groupProfile(int groupId, Track seed) async {
+    final r = await _dio.get('$_base/groups.getById',
+        queryParameters: _params({
+          'group_ids': '$groupId',
+          'fields': 'description,members_count,cover',
+        }),
+        options: _opts);
+    final items = (_unwrap(r.data)['response'] as List? ?? []);
+    if (items.isEmpty) return null;
+    final g = (items.first as Map);
+    final coverImages = (g['cover'] as Map?)?['images'] as List?;
+    final cover = (coverImages != null && coverImages.isNotEmpty)
+        ? (coverImages.last as Map)['url'] as String?
+        : null;
+    final desc = (g['description'] as String?)?.trim();
+    return ArtistProfile(
+      name: g['name'] as String? ?? seed.artist,
+      source: SourceType.vk,
+      avatarUrl: g['photo_200'] as String?,
+      bannerUrl: cover,
+      bio: (desc == null || desc.isEmpty) ? null : desc,
+      followers: (g['members_count'] as num?)?.toInt(),
+      isRecordOwner: true,
+    );
+  }
+
+  Future<ArtistProfile?> _userProfile(int userId, Track seed) async {
+    final r = await _dio.get('$_base/users.get',
+        queryParameters: _params({
+          'user_ids': '$userId',
+          'fields': 'photo_200,followers_count,about',
+        }),
+        options: _opts);
+    final items = (_unwrap(r.data)['response'] as List? ?? []);
+    if (items.isEmpty) return null;
+    final u = (items.first as Map);
+    final name = [u['first_name'], u['last_name']]
+        .whereType<String>()
+        .join(' ')
+        .trim();
+    final about = (u['about'] as String?)?.trim();
+    return ArtistProfile(
+      name: name.isEmpty ? seed.artist : name,
+      source: SourceType.vk,
+      avatarUrl: u['photo_200'] as String?,
+      bio: (about == null || about.isEmpty) ? null : about,
+      followers: (u['followers_count'] as num?)?.toInt(),
+      isRecordOwner: true,
     );
   }
 

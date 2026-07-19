@@ -132,18 +132,89 @@ class RecsDedup {
     String gotArtist,
     String gotTitle,
   ) {
-    if (normKey(candArtist, candTitle) == normKey(gotArtist, gotTitle)) {
-      return true;
+    return matchScore(
+          wantArtist: candArtist,
+          wantTitle: candTitle,
+          gotArtist: gotArtist,
+          gotTitle: gotTitle,
+        ) !=
+        null;
+  }
+
+  /// Порог принятия [matchScore]: ниже — считаем чужим треком (кавер/караоке).
+  static const double matchThreshold = 0.62;
+
+  /// Скоринг совпадения кандидата с искомым треком для ранжирования фолбэка.
+  /// Возвращает 0..1, либо null — если кандидат точно не тот трек (кавер, чужая
+  /// песня под тем же названием, сниппет вместо полного трека).
+  ///
+  /// Взвешивает три сигнала: название (0.55), артист (0.25), длительность (0.20).
+  /// Жёсткие гейты как в [resolvesTo]: title fuzzy ≥ 0.8, артист проходит мягкую
+  /// проверку (вхождение или пересечение токенов ≥ 0.34) — иначе кавер проскочил
+  /// бы за счёт названия. Длительность штрафует «другую версию»: радио-эдит,
+  /// ускоренный/замедленный вариант, 30-сек сниппет против полного трека.
+  ///
+  /// [wantDuration]/[gotDuration] опциональны: если хотя бы одного нет, сигнал
+  /// нейтрален (0.6), чтобы не дисквалифицировать трек без данных о длине.
+  static double? matchScore({
+    required String wantArtist,
+    required String wantTitle,
+    required String gotArtist,
+    required String gotTitle,
+    Duration? wantDuration,
+    Duration? gotDuration,
+  }) {
+    if (normKey(wantArtist, wantTitle) == normKey(gotArtist, gotTitle)) {
+      // Точное совпадение ключа — максимальный счёт с поправкой на длительность,
+      // чтобы из дублей предпочесть версию той же длины.
+      return 0.8 + 0.2 * _durationScore(wantDuration, gotDuration);
     }
     final titleSim = math.max(
-      tokenSimilarity(candTitle, gotTitle),
-      levenshteinRatio(candTitle, gotTitle),
+      tokenSimilarity(wantTitle, gotTitle),
+      levenshteinRatio(wantTitle, gotTitle),
     );
-    if (titleSim < 0.8) return false;
-    final a1 = normalize(candArtist);
+    if (titleSim < 0.8) return null;
+
+    // Гейт по артисту — отсекает каверы (Birdy vs Bon Iver при том же «Skinny
+    // Love»). Без него название даёт слишком много очков и кавер проходит.
+    final a1 = normalize(wantArtist);
     final a2 = normalize(gotArtist);
-    if (a1.isEmpty || a2.isEmpty) return false;
-    if (a2.contains(a1) || a1.contains(a2)) return true;
-    return tokenSimilarity(candArtist, gotArtist) >= 0.34;
+    if (a1.isEmpty || a2.isEmpty) return null;
+    final double artistSim;
+    if (a2.contains(a1) || a1.contains(a2)) {
+      artistSim = 1.0; // feat./перестановка/«Drake, Rick Ross» против «Drake»
+    } else {
+      final t = tokenSimilarity(wantArtist, gotArtist);
+      if (t < 0.34) return null;
+      artistSim = t;
+    }
+
+    final durScore = _durationScore(wantDuration, gotDuration);
+    final total = 0.55 * titleSim + 0.25 * artistSim + 0.20 * durScore;
+    return total >= matchThreshold ? total : null;
+  }
+
+  /// Оценка совпадения длительности, 0.2..1.0 (0.6 — нейтрально при отсутствии
+  /// данных). Полное совпадение и расхождение ≤3с — 1.0; до 10с — плавный спад к
+  /// 0.8; до 30с — к 0.5; свыше — 0.2 (явно другая версия/сниппет). Ratio длин
+  /// < 0.5 тоже даёт 0.2 — на случай wildly разных треков.
+  static double _durationScore(Duration? want, Duration? got) {
+    if (want == null || got == null) return 0.6;
+    final ws = want.inSeconds;
+    final gs = got.inSeconds;
+    if (ws == 0 && gs == 0) return 0.6;
+    final maxLen = math.max(ws, gs);
+    if (maxLen == 0) return 0.6;
+    final ratio = math.min(ws, gs) / maxLen;
+    if (ratio < 0.5) return 0.2;
+    final delta = (ws - gs).abs();
+    if (delta <= 3) return 1.0;
+    if (delta > 30) return 0.2;
+    if (delta <= 10) {
+      // 3..10с → 1.0..0.8
+      return 1.0 - 0.2 * (delta - 3) / 7;
+    }
+    // 10..30с → 0.8..0.5
+    return 0.8 - 0.3 * (delta - 10) / 20;
   }
 }

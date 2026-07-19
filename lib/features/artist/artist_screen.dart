@@ -47,13 +47,37 @@ class ArtistScreen extends ConsumerStatefulWidget {
 class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   bool _albumsTab = false;
 
-  Track? _findScSeed(List<Track> tracks) {
+  /// Трек-«затравка» для запроса полного профиля артиста, по убыванию
+  /// надёжности: SoundCloud (id автора трека) → YouTube Music (отдельный
+  /// поиск карточки исполнителя по имени) → Яндекс Музыка (id артиста) → VK
+  /// последним — там owner_id это владелец записи, не обязательно сам артист
+  /// (см. [ArtistProfile.isRecordOwner] и Aggregator.artistProfile).
+  Track? _findProfileSeed(List<Track> tracks) {
+    Track? scSeed;
+    Track? ytSeed;
+    Track? yaSeed;
+    Track? vkSeed;
     for (final t in tracks) {
-      if (t.source == SourceType.soundcloud && t.extra['scUserId'] != null) {
-        return t;
+      if (scSeed == null &&
+          t.source == SourceType.soundcloud &&
+          t.extra['scUserId'] != null) {
+        scSeed = t;
+      }
+      if (ytSeed == null && t.source == SourceType.youtube) {
+        ytSeed = t;
+      }
+      if (yaSeed == null &&
+          t.source == SourceType.yandex &&
+          t.extra['artistId'] != null) {
+        yaSeed = t;
+      }
+      if (vkSeed == null &&
+          t.source == SourceType.vk &&
+          t.extra['ownerId'] != null) {
+        vkSeed = t;
       }
     }
-    return null;
+    return scSeed ?? ytSeed ?? yaSeed ?? vkSeed;
   }
 
   String? _firstArtwork(List<Track> tracks) {
@@ -123,9 +147,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   }
 
   Widget _buildContent(List<Track> tracks, AppLocalizations l10n) {
-    final scSeed = _findScSeed(tracks);
-    final profile =
-        scSeed != null ? ref.watch(_artistProfileProvider(scSeed)).value : null;
+    final profileSeed = _findProfileSeed(tracks);
+    final profile = profileSeed != null
+        ? ref.watch(_artistProfileProvider(profileSeed)).value
+        : null;
     final bannerUrl = profile?.bannerUrl ?? _firstArtwork(tracks);
     final avatarUrl = profile?.avatarUrl ?? _firstArtwork(tracks);
     final albums = _groupAlbums(tracks);
@@ -348,6 +373,14 @@ class _Header extends StatelessWidget {
                                   fontSize: 12.5, color: AppColors.white60)),
                       ],
                     ),
+                    if (profile?.isRecordOwner ?? false) ...[
+                      const SizedBox(height: 2),
+                      Text(l10n.artistRecordOwnerNotice,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: AppColors.white45)),
+                    ],
                   ],
                 ),
               ),

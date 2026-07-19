@@ -122,11 +122,15 @@
   },
   "artistFollowersCount": "{count, plural, one{{count} подписчик} few{{count} подписчика} many{{count} подписчиков} other{{count} подписчика}}",
   "@artistFollowersCount": {
-    "description": "Счётчик подписчиков артиста (только для источников, отдающих профиль — сейчас SoundCloud)",
+    "description": "Счётчик подписчиков артиста (для источников, отдающих профиль — SoundCloud/YouTube/Яндекс/VK)",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
+  },
+  "artistRecordOwnerNotice": "Владелец записи в VK — не подтверждённый профиль артиста",
+  "@artistRecordOwnerNotice": {
+    "description": "Предупреждение под именем артиста, когда профиль из VK показывает владельца записи (owner_id), а не гарантированно самого артиста"
   }
 }

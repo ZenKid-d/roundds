@@ -25,5 +25,6 @@
   "artistAlbumsTab": "Albums",
   "artistPlayAll": "Play all",
   "artistTracksCount": "{count, plural, one{{count} track} other{{count} tracks}}",
-  "artistFollowersCount": "{count, plural, one{{count} follower} other{{count} followers}}"
+  "artistFollowersCount": "{count, plural, one{{count} follower} other{{count} followers}}",
+  "artistRecordOwnerNotice": "VK record owner — not a confirmed artist profile"
 }

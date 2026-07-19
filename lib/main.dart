@@ -61,6 +61,9 @@ Future<void> main() async {
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);
+  // Кросс-источник: если трек за пейволлом/недоступен, но та же песня уже
+  // скачана из другого источника — играем офлайн-копию вместо похода в сеть.
+  aggregator.localMatchResolver = downloads.localMatchByNormKey;
   final reco = RecommendationService(youtube, soundcloud, yandex, aggregator);
 
   // Last.fm: секреты (apiKey/secret/sessionKey) лежат в secure storage.

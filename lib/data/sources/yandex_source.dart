@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -155,8 +156,9 @@ class YandexSource implements MusicSource {
   Future<PlayableStream> resolveStream(Track track) async {
     _requireToken();
     try {
-      final info = await _dio.get('$_base/tracks/${track.id}/download-info',
-          options: _opts);
+      final info = await _dio
+          .get('$_base/tracks/${track.id}/download-info', options: _opts)
+          .timeout(const Duration(seconds: 12));
       final variants = (info.data['result'] as List? ?? []);
       if (variants.isEmpty) {
         throw SourceException(type, 'нет вариантов загрузки');
@@ -220,8 +222,9 @@ class YandexSource implements MusicSource {
 
   @visibleForTesting
   static Track toTrack(Map<String, dynamic> j) {
-    final artists = (j['artists'] as List? ?? [])
-        .map((a) => (a as Map)['name'])
+    final artistsList = (j['artists'] as List? ?? []).whereType<Map>().toList();
+    final artists = artistsList
+        .map((a) => a['name'])
         .whereType<String>()
         .join(', ');
     final albums = (j['albums'] as List? ?? []);
@@ -231,6 +234,8 @@ class YandexSource implements MusicSource {
     if (cover != null) cover = 'https://${cover.replaceAll('%%', '400x400')}';
     // albumId кладём в extra — по нему открывается страница альбома (треклист).
     final albumId = firstAlbum?['id'];
+    // id первого артиста — для запроса профиля (страница исполнителя).
+    final artistId = artistsList.isNotEmpty ? artistsList.first['id'] : null;
     return Track(
       id: '${j['id'] ?? j['realId']}',
       title: j['title'] as String? ?? 'Без названия',
@@ -241,8 +246,54 @@ class YandexSource implements MusicSource {
           ? Duration(milliseconds: j['durationMs'] as int)
           : null,
       source: SourceType.yandex,
-      extra: albumId != null ? {'albumId': '$albumId'} : const {},
+      extra: {
+        if (albumId != null) 'albumId': '$albumId',
+        if (artistId != null) 'artistId': '$artistId',
+      },
     );
+  }
+
+  /// Профиль исполнителя (обложка/описание/слушатели за месяц) по id артиста
+  /// (`extra['artistId']` трека, см. [toTrack]) — для страницы исполнителя.
+  ///
+  /// ⚠️ Эндпоинт неофициальный, задокументирован только сторонними клиентами
+  /// (yandex-music-api и аналоги) — не проверялся вживую в этой сессии
+  /// (api.music.yandex.net гео-блокирует запросы вне РФ), имена полей —
+  /// best-effort по community-схеме. При расхождении/сбое — null, как и
+  /// остальные де-градации источника (albumTracks/similar).
+  Future<ArtistProfile?> artistProfile(Track seed) async {
+    final artistId = seed.extra['artistId'];
+    if (artistId == null || _token == null || _token!.isEmpty) return null;
+    try {
+      final r = await _dio.get('$_base/artists/$artistId/brief-info',
+          options: _opts);
+      final artist = r.data['result']?['artist'] as Map?;
+      if (artist == null) return null;
+      String? cover =
+          (artist['cover'] as Map?)?['uri'] as String? ??
+              artist['ogImage'] as String?;
+      if (cover != null) {
+        cover = cover.contains('%%')
+            ? 'https://${cover.replaceAll('%%', '400x400')}'
+            : (cover.startsWith('http') ? cover : 'https://$cover');
+      }
+      final descRaw = artist['description'];
+      final bio =
+          descRaw is Map ? descRaw['text'] as String? : descRaw as String?;
+      final listeners =
+          (r.data['result']?['stats']?['lastMonthListeners'] as num?)
+              ?.toInt();
+      return ArtistProfile(
+        name: artist['name'] as String? ?? seed.artist,
+        source: SourceType.yandex,
+        avatarUrl: cover,
+        bio: (bio == null || bio.isEmpty) ? null : bio,
+        followers: listeners,
+      );
+    } catch (e) {
+      Diagnostics.instance.warn('ya.artistProfile', '$artistId: $e');
+      return null;
+    }
   }
 
   /// Треклист альбома по его id (для страницы альбома). Ответ Яндекса — том(а)

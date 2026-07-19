@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -179,7 +181,10 @@ class SoundcloudSource implements MusicSource {
     final transcodings =
         (track.extra['transcodings'] as List?)?.cast<Map>() ?? const [];
     if (transcodings.isEmpty) {
-      throw SourceException(type, 'нет доступного потока для трека');
+      // Нет транскодингов вовсе — трек закрыт для off-platform стриминга
+      // (paywalled Go+, geo-block, снят с публикации). Это не сетевой сбой, а
+      // пейволл: агрегатор опознает маркер и пойдёт в кросс-источник без шума.
+      throw SourceException(type, goPlusMarker);
     }
     // progressive (mp3) надёжнее всего; hls тоже играбелен в ExoPlayer.
     int rank(Map t) {
@@ -190,13 +195,16 @@ class SoundcloudSource implements MusicSource {
     }
 
     final ordered = [...transcodings]..sort((a, b) => rank(a) - rank(b));
+    int paywallHits = 0;
     for (final t in ordered) {
       final url = t['url'] as String?;
       if (url == null) continue;
       try {
-        final r = await _dio.get(url,
-            queryParameters: {'client_id': _clientId},
-            options: Options(headers: _authHeaders));
+        final r = await _dio
+            .get(url,
+                queryParameters: {'client_id': _clientId},
+                options: Options(headers: _authHeaders))
+            .timeout(const Duration(seconds: 12));
         final streamUrl = (r.data as Map)['url'] as String?;
         if (streamUrl != null && streamUrl.isNotEmpty) {
           return PlayableStream(
@@ -204,14 +212,42 @@ class SoundcloudSource implements MusicSource {
             expiresAt: DateTime.now().add(defaultStreamExpiry),
           );
         }
-      } catch (_) {/* пробуем следующий транскодинг */}
+      } on TimeoutException {
+        // Зависший транскодинг — пробуем следующий, не считаем пейволлом.
+        Diagnostics.instance.warn(
+            'sc.resolve', '${track.id}: таймаут транскодинга, пробуем следующий');
+      } catch (e) {
+        // 401/403 от транскодинга — признак Go+ контента без подписки. Считаем,
+        // чтобы отличить «все за пейволлом» от «временный сбой сети».
+        if (isPaywallStatus(e)) paywallHits++;
+        // пробуем следующий транскодинг
+      }
+    }
+    // Все транскодинги за пейволлом (или единственный) → это Go+ эксклюзив, а не
+    // сетевая ошибка. Маркер опознаётся агрегатором и логируется тише.
+    if (paywallHits > 0 && paywallHits == ordered.length) {
+      throw SourceException(type, goPlusMarker);
     }
     Diagnostics.instance.error('sc.resolve',
         '${track.id} «${track.title}»: нет играбельного транскодинга');
-    throw SourceException(
-      type,
-      'поток недоступен — возможно, трек доступен только по подписке SoundCloud Go.',
-    );
+    throw SourceException(type, 'нет играбельного транскодинга');
+  }
+
+  /// Стабильный маркер пейволла в сообщении [SourceException]. Агрегатор ищет
+  /// его в `nativeErr`, чтобы отличить «трек за Go+» (ждём кросс-источник) от
+  /// сетевого сбоя/блокировки (важнее показать пользователю).
+  static const goPlusMarker = 'SC_GO_PLUS: поток недоступен — трек, вероятно, '
+      'доступен только по подписке SoundCloud Go.';
+
+  /// 401/403 от SoundCloud — признак контента за пейволлом (без OAuth подписки).
+  /// Публичный, чтобы агрегатор/тесты могли опознавать пейволл единообразно.
+  @visibleForTesting
+  static bool isPaywallStatus(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      return code == 401 || code == 403;
+    }
+    return false;
   }
 
   // Нативной загрузки нет — грузим по resolveStream-URL (см. DownloadsController).
