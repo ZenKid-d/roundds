@@ -27,7 +27,7 @@ final effectiveAccentProvider = Provider<Color>((ref) {
   final ts = ref.watch(themeSettingsProvider);
   switch (ts.accentMode) {
     case AccentMode.dynamic:
-      return ref.watch(accentProvider).valueOrNull ?? AppColors.defaultAccent;
+      return ref.watch(accentProvider).value ?? AppColors.defaultAccent;
     case AccentMode.preset:
       return ts.presetColor;
     case AccentMode.custom:

@@ -1,5 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// riverpod 3 вынес ChangeNotifierProvider/StateProvider в legacy-модуль
+// (курс на Notifier/AsyncNotifier) — полная миграция на новый API отдельной
+// задачей (крупная перезапись всех провайдеров), пока используем legacy shim.
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
