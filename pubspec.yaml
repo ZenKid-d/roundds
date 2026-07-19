@@ -17,7 +17,7 @@ dependencies:
   flutter_riverpod: ^2.5.1
 
   # Navigation
-  go_router: ^14.2.0
+  go_router: ^17.3.0
 
   # Audio playback (in-app player + background/notification)
   just_audio: ^0.9.40
