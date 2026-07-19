@@ -114,8 +114,9 @@ class SettingsScreen extends ConsumerWidget {
         _TokenField(
           hasToken: settings.hasVkToken,
           hint: 'Access-токен VK',
-          description: 'Токен клиента VK с доступом к аудио (напр. Kate '
-              'Mobile). Даёт большой каталог, доступный из РФ, когда '
+          description: 'Токен официального приложения VK (client_id 2274003) '
+              'с доступом к аудио — Kate Mobile-токены VK отрезал от музыки '
+              'в мае 2026. Даёт большой каталог, доступный из РФ, когда '
               'SoundCloud/YouTube заблокированы. Аккаунт — на свой риск '
               '(нарушает правила VK).',
           onSave: (v) => ref.read(settingsProvider).setVkToken(v),

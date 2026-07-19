@@ -289,6 +289,13 @@ class Aggregator {
 
   Track? _pickMatch(Track want, List<Track> results) => pickMatch(want, results);
 
+  /// Резолв ТОЛЬКО родного источника трека, без авто-фолбэка на другие. Нужен,
+  /// когда вызывающий сам решает, как реагировать на ошибку — например,
+  /// RoundsAudioHandler для SC Go+ предлагает пользователю выбор («Играть с
+  /// YouTube») вместо молчаливой подмены, которую делает [resolveWithSource].
+  Future<PlayableStream> resolveNative(Track track) =>
+      _sources[track.source]!.resolveStream(track);
+
   /// Резолв с умной маршрутизацией: если родной источник не отдал поток
   /// (например, трек на SoundCloud доступен только по подписке Go+, отключён или
   /// ошибка), ищем ТУ ЖЕ песню в других включённых источниках и играем оттуда.
@@ -472,8 +479,9 @@ class Aggregator {
 
   /// Опознаёт маркер пейволла SoundCloud Go+ в ошибке родного источника.
   /// См. [SoundcloudSource.goPlusMarker] — кидает SourceException со стабильным
-  /// префиксом, чтобы отличить пейволл от сетевого сбоя/блокировки.
-  @visibleForTesting
+  /// префиксом, чтобы отличить пейволл от сетевого сбоя/блокировки. Публичный
+  /// (не только для тестов) — RoundsAudioHandler использует его, чтобы вместо
+  /// молчаливой подмены предложить пользователю выбор источника.
   static bool isGoPlusErr(Object err) {
     final msg = err is SourceException
         ? err.message

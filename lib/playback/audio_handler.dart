@@ -108,6 +108,18 @@ class RoundsAudioHandler extends BaseAudioHandler {
   SourceType? _playingVia;
   SourceType? get playingVia => _playingVia;
 
+  // Предложение сыграть SoundCloud Go+ трек с другого источника: в отличие от
+  // обычного фолбэка (см. resolveWithSource — тот подменяет молча), Go+
+  // ничего не грузит сам — ждёт решения пользователя (см. onGoPlusOffer,
+  // acceptGoPlusOffer). Оба поля null, если активного предложения нет.
+  Track? _pendingGoPlusNative;
+  ({PlayableStream stream, Track track})? _pendingGoPlusOffer;
+
+  /// Родной трек оказался за пейволлом SoundCloud Go+, и нашлась та же песня
+  /// в другом источнике — UI должен предложить пользователю выбор (напр.
+  /// SnackBar «Играть с YouTube»), а не подменять источник молча.
+  void Function(Track native, Track offerTrack)? onGoPlusOffer;
+
   // Авто-восстановление при обрыве протухшего потока во время игры.
   bool _recovering = false;
   int _recoverAttempts = 0;
@@ -331,6 +343,12 @@ class RoundsAudioHandler extends BaseAudioHandler {
       await _loadGapless(track, autoSkipOnError: autoSkipOnError);
       return;
     }
+    // Предложение Go+ было для другого трека (переключились, не дождавшись
+    // решения) — оно больше не актуально.
+    if (_pendingGoPlusNative != null && _pendingGoPlusNative!.uid != track.uid) {
+      _pendingGoPlusNative = null;
+      _pendingGoPlusOffer = null;
+    }
     final gen = ++_loadGen;
     _loading = true;
     _error = null;
@@ -375,10 +393,24 @@ class RoundsAudioHandler extends BaseAudioHandler {
             stream = r.stream;
             _playingVia = r.track.source;
           } else {
-            final r = await _aggregator.resolveWithSource(track);
-            stream = r.stream;
-            _playingVia =
-                r.track.source == track.source ? null : r.track.source;
+            try {
+              stream = await _aggregator.resolveNative(track);
+              _playingVia = null;
+            } catch (e) {
+              if (!Aggregator.isGoPlusErr(e)) rethrow;
+              // SC Go+: не подменяем молча — предлагаем пользователю выбор
+              // (см. onGoPlusOffer/acceptGoPlusOffer). Нет альтернативы —
+              // обычная ошибка ниже, как при любом другом сбое источника.
+              final offer =
+                  await _aggregator.resolveFromOtherSources(track, nativeErr: e);
+              if (offer == null) rethrow;
+              _pendingGoPlusNative = track;
+              _pendingGoPlusOffer = offer;
+              onGoPlusOffer?.call(track, offer.track);
+              _loading = false;
+              _notify();
+              return;
+            }
           }
           if (gen != _loadGen) return;
           _preUid = null;
@@ -456,6 +488,50 @@ class RoundsAudioHandler extends BaseAudioHandler {
     final t = current;
     if (t != null) _aggregator.evictStreamCache(t); // свежий резолв, не из кэша
     return _load(autoSkipOnError: false); // «Повтор» — этот трек, не листаем
+  }
+
+  /// Пользователь принял предложение сыграть Go+-трек с другого источника
+  /// (см. onGoPlusOffer). No-op, если предложения уже нет или трек сменился.
+  Future<void> acceptGoPlusOffer() async {
+    final native = _pendingGoPlusNative;
+    final offer = _pendingGoPlusOffer;
+    if (native == null || offer == null || current?.uid != native.uid) return;
+    _pendingGoPlusNative = null;
+    _pendingGoPlusOffer = null;
+    final gen = ++_loadGen;
+    _loading = true;
+    _playingVia = offer.track.source;
+    _notify();
+    try {
+      await _player.setAudioSource(
+        AudioSource.uri(offer.stream.uri, headers: offer.stream.headers),
+      );
+      if (gen != _loadGen) return;
+      _player.play();
+      _error = null;
+      _errorSkipStreak = 0;
+      _saveSession();
+      unawaited(_preloadNext());
+      unawaited(_maybeExtendRadio());
+    } catch (e) {
+      if (gen != _loadGen) return;
+      Diagnostics.instance
+          .warn('play.goplus_accept', '${native.title}: $e');
+      _error = 'Не удалось воспроизвести с другого источника. '
+          'Нажмите «Повтор».';
+    } finally {
+      if (gen == _loadGen) {
+        _loading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Отклоняет предложение (пользователь пропустил/переключил трек вручную,
+  /// не дожидаясь решения).
+  void dismissGoPlusOffer() {
+    _pendingGoPlusNative = null;
+    _pendingGoPlusOffer = null;
   }
 
   /// Ошибка воспроизведения от плеера (напр. истёкшая ссылка на поток посреди

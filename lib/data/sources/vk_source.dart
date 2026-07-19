@@ -36,12 +36,20 @@ class VkSource implements MusicSource {
   static const _base = 'https://api.vk.com/method';
   static const _apiVersion = '5.131';
 
-  // ВАЖНО: методы audio.* у VK доступны только с User-Agent клиента Kate
-  // Mobile (тем же, для которого выпущен токен client_id=2685278). С обычным
-  // UA VK отдаёт ошибку доступа / пустой ответ — треки «не находятся».
+  // ВАЖНО: методы audio.* у VK доступны только с User-Agent «доверенного»
+  // клиента. Kate Mobile (client_id=2685278) был отрезан от аудио-API VK
+  // примерно в мае 2026 — audio.search стал отвечать error_code=3 «Unknown
+  // method passed» для ЛЮБОГО токена, выпущенного под этот client_id, вне
+  // зависимости от UA запроса. Официальное Android-приложение VK
+  // (client_id=2274003) на момент этого фикса ещё работает — используем его
+  // UA. Токен тоже должен быть выпущен под client_id=2274003 (см. описание в
+  // Настройках), иначе смена одного UA не поможет.
+  //
+  // Побочный эффект: этот клиент отдаёт ссылки на поток в виде HLS
+  // `.m3u8` вместо прямых `.mp3` — ExoPlayer (используется в проигрывателе)
+  // их поддерживает нативно, так что resolveStream ничего менять не должен.
   static const _ua =
-      'KateMobileAndroid/56 lite-460 '
-      '(Android 4.4.2; SDK 19; x86; unknown Android SDK built for x86; en)';
+      'VKAndroidApp/4.13.1-1206 (Android 4.4.3; SDK 19; armeabi; ; ru)';
 
   @override
   SourceType get type => SourceType.vk;
@@ -64,6 +72,15 @@ class VkSource implements MusicSource {
     final map = (data as Map).cast<String, dynamic>();
     final err = map['error'];
     if (err is Map) {
+      // error_code=3 «Unknown method passed» на audio.* — это не опечатка в
+      // имени метода (он существует), а признак того, что VK отрезал именно
+      // ЭТОТ client_id/токен от аудио-API целиком (так было с Kate Mobile в
+      // мае 2026). Обычное «неверный токен» здесь вводит в заблуждение.
+      if (err['error_code'] == 3) {
+        throw SourceException(type,
+            'VK закрыл доступ к музыке для этого токена — сгенерируйте новый '
+            'через официальное приложение VK (см. Настройки)');
+      }
       throw SourceException(
           type, 'VK: ${err['error_msg'] ?? err['error_code'] ?? 'ошибка'}');
     }

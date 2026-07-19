@@ -154,6 +154,42 @@ void main() {
     });
   });
 
+  group('Aggregator.resolveNative', () {
+    test('рабочий источник — отдаёт поток напрямую', () async {
+      final sc = FakeSource(SourceType.soundcloud);
+      final agg = Aggregator({SourceType.soundcloud: sc},
+          enabled: {SourceType.soundcloud});
+
+      final stream = await agg.resolveNative(track(SourceType.soundcloud, '1'));
+      expect(stream.uri.toString(), contains('1'));
+    });
+
+    test('падение родного источника — пробрасывает ошибку БЕЗ фолбэка '
+        '(в отличие от resolveWithSource)', () async {
+      // YouTube мог бы подставить ту же песню, но resolveNative не должен
+      // его трогать вовсе — вызывающий (RoundsAudioHandler) сам решает, что
+      // делать с ошибкой (напр. предложить пользователю выбор при SC Go+).
+      final yt = FakeSource(SourceType.youtube, results: [
+        const Track(
+            id: 'ytid',
+            title: 'sc1',
+            artist: 'artist-sc1',
+            source: SourceType.youtube),
+      ]);
+      final sc = FakeSource(SourceType.soundcloud, throwOnResolve: true);
+      final agg = Aggregator(
+        {SourceType.youtube: yt, SourceType.soundcloud: sc},
+        enabled: {SourceType.youtube, SourceType.soundcloud},
+      );
+
+      await expectLater(
+        agg.resolveNative(track(SourceType.soundcloud, 'sc1')),
+        throwsA(isA<Exception>()),
+      );
+      expect(yt.searchCalls, 0); // фолбэк не запускался вообще
+    });
+  });
+
   group('Aggregator.youtubeMatch', () {
     test('находит ту же песню на YouTube для не-YT источника', () async {
       final yt = FakeSource(SourceType.youtube, results: [

@@ -12,6 +12,7 @@ class PlaybackController extends ChangeNotifier {
   PlaybackController(this._handler) {
     _handler.onUiChanged = notifyListeners;
     _handler.onTrackStarted = _onTrackStarted;
+    _handler.onGoPlusOffer = (native, offer) => onGoPlusOffer?.call(native, offer);
     // Позицию НЕ уведомляем на каждый тик (иначе весь плеер перестраивается
     // ~5 раз/сек). Её слушает отдельный positionProvider — обновляется только
     // прогресс-бар. Здесь лишь держим поле актуальным для чтения.
@@ -48,6 +49,12 @@ class PlaybackController extends ChangeNotifier {
   /// для event log рекомендательного движка.
   void Function(Track track)? onTrackStartedSignal;
   void Function(Track track, int playedMs, int durationMs)? onTrackEnded;
+
+  /// Родной трек оказался за пейволлом SoundCloud Go+, нашлась та же песня в
+  /// другом источнике — UI должен предложить выбор (SnackBar «Играть с
+  /// <источник>»), а не подменять источник молча. Ставится из виджета
+  /// (нужен BuildContext), см. HomeShell.
+  void Function(Track native, Track offerTrack)? onGoPlusOffer;
 
   // Учёт проигранного времени текущего трека — для скроббла по правилам Last.fm.
   Track? _npTrack;
@@ -170,6 +177,8 @@ class PlaybackController extends ChangeNotifier {
 
   Future<void> pause() => _handler.pause();
   Future<void> retry() => _handler.retry();
+  Future<void> acceptGoPlusOffer() => _handler.acceptGoPlusOffer();
+  void dismissGoPlusOffer() => _handler.dismissGoPlusOffer();
   Future<void> next() => _handler.skipToNext();
   Future<void> previous() => _handler.skipToPrevious();
   Future<void> seek(Duration to) => _handler.seek(to);

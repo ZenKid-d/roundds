@@ -5,6 +5,8 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/mini_player.dart';
+import '../../domain/models/source_type.dart';
+import '../../domain/models/track.dart';
 import '../drawer/app_drawer.dart';
 import '../home/home_screen.dart';
 import '../library/library_screen.dart';
@@ -45,6 +47,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       checkForUpdate(context, ref, silent: true);
       _maybeOnboard();
     });
+    // SC Go+: предложить сыграть с другого источника вместо молчаливой
+    // подмены. HomeShell — единственный постоянно смонтированный Scaffold
+    // (NowPlayingScreen лежит поверх него как отдельный route), поэтому
+    // снекбар всегда есть куда показать, на каком бы экране ни был пользователь.
+    ref.read(playbackProvider).onGoPlusOffer = _showGoPlusOffer;
+  }
+
+  void _showGoPlusOffer(Track native, Track offer) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(
+      content: Text('«${native.title}» — доступен только по подписке '
+          'SoundCloud Go+'),
+      action: SnackBarAction(
+        label: 'Играть с ${offer.source.label}',
+        onPressed: () => ref.read(playbackProvider).acceptGoPlusOffer(),
+      ),
+      duration: const Duration(seconds: 10),
+    ));
   }
 
   /// Первый запуск с пустой библиотекой → показываем онбординг. Если лайки уже
